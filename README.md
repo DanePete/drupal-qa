@@ -225,6 +225,58 @@ Set these in your repo's Settings > Secrets:
 | `behat_tags` | string | `smoke` | Behat tag filter |
 | `source_env` | string | `live` | Environment to clone from |
 
+## Quick Setup
+
+### Option A: Interactive Setup Script
+
+Run this from your project root to generate all workflow files and update composer.json:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/DanePete/drupal-qa/main/scripts/setup.sh)
+```
+
+Or download and run it manually:
+
+```bash
+curl -O https://raw.githubusercontent.com/DanePete/drupal-qa/main/scripts/setup.sh
+bash setup.sh
+```
+
+The script will ask for your Pantheon site name, site UUID, and preferences, then generate everything.
+
+### Option B: AI Prompt
+
+Give this prompt to Claude, ChatGPT, or any AI assistant to generate all needed files:
+
+```text
+I'm setting up a Drupal project that deploys to Pantheon. I need you to generate
+the GitHub Actions workflow files and composer.json changes to use the
+thronedigital/drupal-qa package.
+
+Here's my project info:
+- Pantheon site machine name: [YOUR_SITE_NAME]
+- Pantheon site UUID: [YOUR_SITE_UUID]
+- PHP version: [8.3]
+- PHPCS should block PRs: [yes/no]
+- PHPStan should block PRs: [yes/no]
+- Custom theme paths to scan: [e.g. web/themes/custom/]
+- Has Drupal Commerce: [yes/no]
+- Run Behat tests on multidev: [yes/no]
+
+Generate the following files:
+
+1. `.github/workflows/pr-checks.yml` — calls DanePete/drupal-qa pr-checks workflow
+2. `.github/workflows/deploy-pantheon.yml` — calls DanePete/drupal-qa deploy workflow
+3. `.github/workflows/multidev.yml` — calls DanePete/drupal-qa multidev workflow
+4. `.github/workflows/multidev-cleanup.yml` — calls DanePete/drupal-qa cleanup workflow
+5. `tests/behat/bootstrap/FeatureContext.php` — extends DrupalQa base context
+6. Show me the composer.json changes needed (add thronedigital/drupal-qa to
+   require-dev and allowed-packages)
+
+Reference the workflow inputs documented at:
+https://github.com/DanePete/drupal-qa#workflow-inputs
+```
+
 ## Customizing Configs
 
 If you need to override a scaffolded config, copy it and remove the `.dist` extension. For example, to customize PHPStan:
