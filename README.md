@@ -25,6 +25,14 @@ Reusable CI/QA toolchain for Drupal 10+ projects. One `composer require` gives y
 - [Upgrading](#upgrading)
 - [Troubleshooting](#troubleshooting)
 
+## Install
+
+```bash
+composer require --dev thronedigital/drupal-qa
+```
+
+Or run the [setup script](#quick-setup) which does this and more.
+
 ## What You Get
 
 - **Automated PR checks** — PHPCS, PHPStan, YAML lint, security audit, PHPUnit on every pull request
