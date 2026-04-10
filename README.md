@@ -586,7 +586,7 @@ Scaffolded `.dist` files will be refreshed. Your custom overrides (files without
 
 ## Copilot PR Reviews
 
-The package scaffolds a `.github/.copilot-review-config.yml` that tells GitHub Copilot to review PRs with Drupal-specific checks:
+The package scaffolds a `.github/copilot-instructions.md` that tells GitHub Copilot how to review PRs for this project:
 
 - Deprecated Drupal API usage
 - Security issues (XSS, SQL injection, missing access checks)
