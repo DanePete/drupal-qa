@@ -31,7 +31,7 @@ The only manual step left is adding GitHub secrets (see [Required Secrets](#requ
 
 ### Option B: AI Prompt
 
-Copy this prompt into Claude, ChatGPT, or any AI assistant:
+Copy this prompt into an AI coding tool that can read your codebase (Claude Code, Cursor, Copilot, Windsurf, etc.):
 
 ```text
 I'm setting up a Drupal project that deploys to Pantheon. I need you to generate
@@ -394,7 +394,7 @@ No config changes needed. The wildcard in `phpunit.xml.dist` picks it up.
 
 ### Using AI to Generate Unit Tests
 
-These prompts work well with Claude, ChatGPT, or any AI assistant that can read your codebase.
+These prompts work with any AI coding tool that can read your codebase (Claude Code, Cursor, Copilot, Windsurf, etc.).
 
 **Find what to test:**
 
