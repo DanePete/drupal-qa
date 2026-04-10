@@ -1,0 +1,45 @@
+name: Multidev Cleanup
+
+on:
+  workflow_call:
+    inputs:
+      pantheon_site:
+        type: string
+        required: true
+        description: 'Pantheon site machine name'
+    secrets:
+      PANTHEON_MACHINE_TOKEN:
+        required: true
+
+env:
+  MULTIDEV_NAME: pr-${{ github.event.pull_request.number }}
+
+jobs:
+  cleanup:
+    name: Delete Multidev
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+
+      - name: Install Terminus
+        run: |
+          mkdir -p ~/terminus && cd ~/terminus
+          curl -L "https://github.com/pantheon-systems/terminus/releases/latest/download/terminus.phar" -o terminus
+          chmod +x terminus
+          echo "$HOME/terminus" >> $GITHUB_PATH
+
+      - name: Authenticate Terminus
+        run: terminus auth:login --machine-token="${{ secrets.PANTHEON_MACHINE_TOKEN }}"
+
+      - name: Delete multidev environment
+        run: |
+          if terminus multidev:list "${{ inputs.pantheon_site }}" --format=list --field=id 2>/dev/null | grep -q "^${{ env.MULTIDEV_NAME }}$"; then
+            echo "Deleting multidev ${{ env.MULTIDEV_NAME }}..."
+            terminus multidev:delete "${{ inputs.pantheon_site }}.${{ env.MULTIDEV_NAME }}" --delete-branch --yes
+            echo "Multidev ${{ env.MULTIDEV_NAME }} deleted."
+          else
+            echo "Multidev ${{ env.MULTIDEV_NAME }} does not exist — nothing to clean up."
+          fi
