@@ -2,17 +2,33 @@
 
 Reusable CI/QA toolchain for Drupal projects. One `composer require` gives you PHPUnit, PHPCS, PHPStan, Behat, and GrumPHP with sensible defaults, generic smoke tests, and reusable GitHub Actions workflows for Pantheon.
 
+## Prerequisites
+
+- A Drupal 10+ project using Composer
+- A Pantheon hosting account (for deploy/multidev workflows)
+- A GitHub repository
+- PHP 8.2+
+- This repo must remain **public** — GitHub requires reusable workflow repos to be public for cross-org `workflow_call`
+
 ## Quick Setup
 
 ### Option A: Interactive Setup Script
 
-Run this from your Drupal project root:
+Run this from your Drupal project root — it handles everything:
 
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/DanePete/drupal-qa/main/scripts/setup.sh)
 ```
 
-The script asks for your Pantheon site name, site UUID, and preferences, then generates all workflow files, a FeatureContext, and tells you what to do next.
+The script will:
+
+1. Ask for your Pantheon site name, UUID, and preferences
+2. Generate all 4 workflow files
+3. Create a FeatureContext extending the base
+4. Add `thronedigital/drupal-qa` to `allowed-packages` in your `composer.json`
+5. Run `composer require --dev thronedigital/drupal-qa`
+
+The only manual step left is adding GitHub secrets (see [Required Secrets](#required-secrets)).
 
 ### Option B: AI Prompt
 
@@ -77,6 +93,15 @@ Run `composer install` — the following files will be scaffolded to your projec
 - `phpstan.neon.dist` — PHPStan level 1, scans `web/modules/custom/` and `web/themes/`
 - `grumphp.yml.dist` — pre-commit hooks (debug function blacklist, PHPCS, PHPStan)
 - `behat.yml.dist` — Behat config with `BEHAT_BASE_URL` env var support
+
+Add the scaffolded `.dist` files to your `.gitignore` — they're regenerated on every `composer install`:
+
+```text
+/behat.yml.dist
+/grumphp.yml.dist
+/phpstan.neon.dist
+/phpunit.xml.dist
+```
 
 ## What's Included
 
@@ -190,17 +215,53 @@ jobs:
 
 ### Required Secrets
 
-Set these in your repo's Settings > Secrets:
+Set these in your GitHub repo under **Settings > Secrets and variables > Actions**:
 
-- `PANTHEON_SSH_KEY` — private key authorized on Pantheon
-- `PANTHEON_MACHINE_TOKEN` — Pantheon machine token for Terminus
+| Secret | Where to get it |
+| ------ | --------------- |
+| `PANTHEON_SSH_KEY` | Generate a keypair (`ssh-keygen -t ed25519`), add the public key to Pantheon dashboard > Account > SSH Keys, paste the private key as the secret |
+| `PANTHEON_MACHINE_TOKEN` | Pantheon dashboard > Account > Machine Tokens > Create Token |
+
+### Finding Your Pantheon Site UUID
+
+Your site UUID is in the Pantheon dashboard URL:
+
+```text
+https://dashboard.pantheon.io/workspace/.../cms-site/{SITE-UUID}/environment/...
+```
+
+Or via Terminus:
+
+```bash
+terminus site:info my-site-name --field=id
+```
+
+## Gradual Adoption
+
+When you first install this on an existing project, you'll likely have PHPCS and PHPStan violations. The `phpcs_required` and `phpstan_required` flags let you adopt gradually:
+
+```yaml
+# Day 1: report violations but don't block anything
+phpcs_required: false
+phpstan_required: false
+
+# After cleaning up PHPCS violations: start enforcing
+phpcs_required: true
+phpstan_required: false
+
+# After cleaning up PHPStan violations: full enforcement
+phpcs_required: true
+phpstan_required: true
+```
+
+When set to `false`, violations show as warnings in the PR checks but won't block the merge.
 
 ## Workflow Inputs
 
 ### pr-checks.yml
 
 | Input | Type | Default | Description |
-|-------|------|---------|-------------|
+| ----- | ---- | ------- | ----------- |
 | `php_version` | string | `8.3` | PHP version |
 | `phpcs_required` | boolean | `true` | Block PR on PHPCS failures |
 | `phpstan_required` | boolean | `false` | Block PR on PHPStan failures |
@@ -210,21 +271,31 @@ Set these in your repo's Settings > Secrets:
 ### deploy-pantheon.yml
 
 | Input | Type | Default | Description |
-|-------|------|---------|-------------|
+| ----- | ---- | ------- | ----------- |
+| `php_version` | string | `8.3` | PHP version |
 | `pantheon_site` | string | required | Site machine name |
 | `pantheon_site_id` | string | required | Site UUID |
 | `phpcs_required` | boolean | `true` | Block deploy on PHPCS failures |
 | `phpstan_required` | boolean | `false` | Block deploy on PHPStan failures |
+| `phpcs_paths` | string | `web/modules/custom/ web/themes/custom/` | Paths to scan |
+| `yamllint_enabled` | boolean | `true` | Lint config/ YAML files |
 
 ### multidev.yml
 
 | Input | Type | Default | Description |
-|-------|------|---------|-------------|
+| ----- | ---- | ------- | ----------- |
+| `php_version` | string | `8.3` | PHP version |
 | `pantheon_site` | string | required | Site machine name |
 | `pantheon_site_id` | string | required | Site UUID |
 | `run_behat` | boolean | `true` | Run Behat tests against multidev |
 | `behat_tags` | string | `smoke` | Behat tag filter |
 | `source_env` | string | `live` | Environment to clone from |
+
+### multidev-cleanup.yml
+
+| Input | Type | Default | Description |
+| ----- | ---- | ------- | ----------- |
+| `pantheon_site` | string | required | Site machine name |
 
 ## Adding Project-Specific Tests
 
@@ -274,9 +345,31 @@ class FeatureContext extends BaseFeatureContext {
 }
 ```
 
+#### Available drevops/behat-steps Traits
+
+These traits from `drevops/behat-steps` can be added to your FeatureContext with `use`:
+
+**Drupal-specific:**
+`ContentTrait`, `UserTrait`, `TaxonomyTrait`, `MediaTrait`, `FileTrait`, `MenuTrait`, `ParagraphsTrait`, `BlockTrait`, `EckTrait`, `EmailTrait`, `QueueTrait`, `SearchApiTrait`, `WebformTrait`, `WatchdogTrait`, `ModuleTrait`, `BigPipeTrait`, `OverrideTrait`
+
+**Generic (no Drupal dependency):**
+`CookieTrait`, `DateTrait`, `ElementTrait`, `FieldTrait`, `FileDownloadTrait`, `IframeTrait`, `JavascriptTrait`, `KeyboardTrait`, `LinkTrait`, `PathTrait`, `ResponseTrait`, `WaitTrait`
+
+Full docs: [drevops/behat-steps](https://github.com/drevops/behat-steps)
+
+### Commerce Behat Suite
+
+The `behat.yml.dist` includes a separate `commerce` suite that loads features from `vendor/thronedigital/drupal-qa/tests/behat/features/commerce/`. This runs automatically if the suite is included.
+
+To skip commerce tests, override `behat.yml.dist` with your own `behat.yml` that only includes the `default` suite, or run Behat with a suite filter:
+
+```bash
+./vendor/bin/behat --suite=default
+```
+
 ## Customizing Configs
 
-If you need to override a scaffolded config, copy it and remove the `.dist` extension. For example, to customize PHPStan:
+If you need to override a scaffolded config, copy it and remove the `.dist` extension:
 
 ```bash
 cp phpstan.neon.dist phpstan.neon
@@ -297,3 +390,44 @@ To prevent a specific file from being scaffolded:
   }
 }
 ```
+
+## Upgrading
+
+To get the latest configs and tests:
+
+```bash
+composer update thronedigital/drupal-qa
+```
+
+Scaffolded `.dist` files will be refreshed. Your custom overrides (files without `.dist`) won't be touched.
+
+## Troubleshooting
+
+**"Workflow not found" or "workflow_call" errors:**
+The `DanePete/drupal-qa` repo must be public. Verify at https://github.com/DanePete/drupal-qa.
+
+**GrumPHP conflicts with existing config:**
+If your project already has a `grumphp.yml`, it takes precedence over `grumphp.yml.dist`. Either update your existing config or delete it to use the scaffolded defaults.
+
+**PHPCS/PHPStan failing on first install:**
+Set `phpcs_required: false` and `phpstan_required: false` in your workflow files to unblock CI while you clean up existing violations. See [Gradual Adoption](#gradual-adoption).
+
+**Scaffolded files not appearing:**
+Make sure `thronedigital/drupal-qa` is in your `allowed-packages`:
+
+```json
+"extra": {
+  "drupal-scaffold": {
+    "allowed-packages": ["thronedigital/drupal-qa"]
+  }
+}
+```
+
+Then run `composer install` again.
+
+**Behat commerce tests failing (no Commerce installed):**
+Run only the default suite: `./vendor/bin/behat --suite=default`
+
+## License
+
+MIT
