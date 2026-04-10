@@ -2,6 +2,28 @@
 
 Reusable CI/QA toolchain for Drupal 10+ projects. One `composer require` gives you automated testing, code quality checks, AI-powered PR reviews, and GitHub Actions workflows for Pantheon — with sensible defaults that work out of the box.
 
+## Table of Contents
+
+- [What You Get](#what-you-get)
+- [Quick Setup](#quick-setup)
+- [Gradual Adoption](#gradual-adoption)
+- [AI PR Reviews](#ai-pr-reviews)
+- [Using AI to Generate Tests](#using-ai-to-generate-tests)
+- [Debugging CI Failures](#debugging-ci-failures)
+
+**Reference:**
+
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [What's Included](#whats-included)
+- [GitHub Actions Setup](#github-actions-setup)
+- [Workflow Inputs](#workflow-inputs)
+- [Adding Project-Specific Tests](#adding-project-specific-tests)
+- [Customizing Configs](#customizing-configs)
+- [Optional Extras](#optional-extras)
+- [Upgrading](#upgrading)
+- [Troubleshooting](#troubleshooting)
+
 ## What You Get
 
 - **Automated PR checks** — PHPCS, PHPStan, YAML lint, security audit, PHPUnit on every pull request
