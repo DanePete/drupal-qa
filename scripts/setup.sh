@@ -18,7 +18,12 @@ fi
 
 # Gather project info
 read -rp "Pantheon site machine name (e.g. my-site): " SITE_NAME
-read -rp "Pantheon site UUID (from Pantheon dashboard): " SITE_ID
+echo ""
+echo "  Your site UUID is in the Pantheon dashboard URL:"
+echo "  https://dashboard.pantheon.io/workspace/.../cms-site/{SITE-UUID}/environment/..."
+echo "  Or run: terminus site:info YOUR_SITE --field=id"
+echo ""
+read -rp "Pantheon site UUID: " SITE_ID
 read -rp "PHP version [8.3]: " PHP_VERSION
 PHP_VERSION=${PHP_VERSION:-8.3}
 

@@ -25,7 +25,7 @@ thronedigital/drupal-qa package.
 
 Here's my project info:
 - Pantheon site machine name: [YOUR_SITE_NAME]
-- Pantheon site UUID: [YOUR_SITE_UUID]
+- Pantheon site UUID: [found in dashboard URL: dashboard.pantheon.io/workspace/.../cms-site/{UUID}/... or via `terminus site:info SITE --field=id`]
 - PHP version: [8.3]
 - PHPCS should block PRs: [yes/no]
 - PHPStan should block PRs: [yes/no]
