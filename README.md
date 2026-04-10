@@ -405,6 +405,15 @@ Rank them by complexity and tell me which ones would benefit most from
 unit tests. Skip simple CRUD or pass-through services.
 ```
 
+**Generate tests for a single file:**
+
+```text
+Read web/modules/custom/my_module/src/Service/PriceCalculator.php. Write a
+PHPUnit unit test for this file. Mock all constructor dependencies. Test
+every public method with normal input, edge cases, and expected failures.
+Put the test at web/modules/custom/my_module/tests/src/Unit/Service/PriceCalculatorTest.php.
+```
+
 **Generate tests for a specific service:**
 
 ```text
@@ -417,14 +426,23 @@ PHPUnit unit tests for it. The test should:
 - Follow Drupal coding standards
 ```
 
-**Generate tests for all services in a module:**
+**Generate tests for a single module:**
 
 ```text
-Read all files in web/modules/custom/my_module/src/ and generate unit tests
-for every service and plugin that has logic worth testing. Put each test in
-the correct namespace under web/modules/custom/my_module/tests/src/Unit/.
-Mock dependencies using PHPUnit mock builder or Prophecy. Skip tests for
-classes that are just wiring (empty constructors, single-line delegation).
+Read everything in web/modules/custom/my_module/. Understand what the module
+does, then write unit tests for every service and plugin that has real logic.
+Put tests in web/modules/custom/my_module/tests/src/Unit/ with the correct
+namespaces. Skip anything that's just glue code with no logic to test.
+```
+
+**Generate tests for all services across all modules:**
+
+```text
+Read all custom modules in web/modules/custom/. For each module, generate
+unit tests for every service and plugin that has logic worth testing. Put
+each test in the correct namespace under that module's tests/src/Unit/.
+Mock dependencies using PHPUnit mock builder or Prophecy. Skip classes
+that are just wiring (empty constructors, single-line delegation).
 ```
 
 **Generate tests based on existing patterns:**
