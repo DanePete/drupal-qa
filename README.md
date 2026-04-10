@@ -336,8 +336,13 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 
 /**
+ * Tests the PriceCalculator service.
+ *
  * @coversDefaultClass \Drupal\my_module\Service\PriceCalculator
+ *   ^ Tells PHPUnit which class this test covers (used for coverage reports).
  * @group my_module
+ *   ^ Groups this test so you can run just your module's tests:
+ *   ./vendor/bin/phpunit --group=my_module
  */
 class PriceCalculatorTest extends UnitTestCase {
 
@@ -347,27 +352,41 @@ class PriceCalculatorTest extends UnitTestCase {
   protected PriceCalculator $calculator;
 
   /**
-   * {@inheritdoc}
+   * Runs before every test method.
+   *
+   * This is where you set up mocks for the service's dependencies.
+   * The real PriceCalculator takes a ConfigFactoryInterface in its
+   * constructor (dependency injection). In the test, we create fake
+   * versions of those dependencies so we can control their behavior.
    */
   protected function setUp(): void {
     parent::setUp();
 
-    // Mock the config factory to return a tax rate.
+    // Create a fake config object that returns 0.08 for 'tax_rate'.
+    // In production this would read from Drupal's config system
+    // (admin/config), but in the test we hardcode the value so the
+    // test doesn't need a database or a running Drupal site.
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')
       ->with('tax_rate')
       ->willReturn(0.08);
 
+    // Create a fake config factory that returns our fake config
+    // when asked for 'my_module.settings'.
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('get')
       ->with('my_module.settings')
       ->willReturn($config);
 
+    // Now create the real service, injecting our fakes.
+    // This is the thing we're actually testing.
     $this->calculator = new PriceCalculator($configFactory);
   }
 
   /**
-   * Tests price calculation with tax.
+   * Tests that $100 with 8% tax = $108.
+   *
+   * This is the most basic "happy path" test — does the math work?
    */
   public function testCalculateWithTax(): void {
     $result = $this->calculator->calculateTotal(100.00);
@@ -375,14 +394,21 @@ class PriceCalculatorTest extends UnitTestCase {
   }
 
   /**
-   * Tests that zero price returns zero.
+   * Tests that zero in = zero out.
+   *
+   * Edge case: make sure we don't get weird floating point issues
+   * or divide-by-zero errors on a $0 price.
    */
   public function testZeroPriceReturnsZero(): void {
     $this->assertEquals(0.00, $this->calculator->calculateTotal(0));
   }
 
   /**
-   * Tests that negative prices throw an exception.
+   * Tests that negative prices are rejected.
+   *
+   * The service should throw an exception rather than silently
+   * calculate tax on a negative number. This test EXPECTS the
+   * exception — if it doesn't throw, the test fails.
    */
   public function testNegativePriceThrowsException(): void {
     $this->expectException(\InvalidArgumentException::class);
@@ -391,6 +417,13 @@ class PriceCalculatorTest extends UnitTestCase {
 
 }
 ```
+
+**Key concepts in this example:**
+- **Mocking** (`createMock`) — creates fake versions of dependencies so your test doesn't need a database, config system, or running Drupal site. The test runs in milliseconds.
+- **`setUp()`** — runs before every test method. Set up your mocks and create the service here.
+- **Happy path test** — does the basic case work?
+- **Edge case test** — what about zero, null, empty values?
+- **Exception test** — does bad input get rejected properly?
 
 No config changes needed. The wildcard in `phpunit.xml.dist` picks it up.
 
