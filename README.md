@@ -6,6 +6,7 @@ Reusable CI/QA toolchain for Drupal 10+ projects. One `composer require` gives y
 
 - [What You Get](#what-you-get)
 - [Quick Setup](#quick-setup)
+- [How It Works](#how-it-works)
 - [Gradual Adoption](#gradual-adoption)
 - [AI PR Reviews](#ai-pr-reviews)
 - [Using AI to Generate Tests](#using-ai-to-generate-tests)
@@ -103,6 +104,64 @@ https://github.com/DanePete/drupal-qa#workflow-inputs
 ### Option C: Manual Setup
 
 See [Installation](#installation) and [GitHub Actions Setup](#github-actions-setup) below.
+
+## How It Works
+
+Once installed, this is the day-to-day workflow:
+
+### 1. Create a branch
+
+```bash
+git checkout -b feature/my-feature
+```
+
+Never work directly on `main`. Every change goes through a branch.
+
+### 2. Write your code
+
+GrumPHP runs automatically on every commit. If you accidentally leave a `var_dump` or violate coding standards, it catches it before you push.
+
+### 3. Push and open a PR
+
+```bash
+git push -u origin feature/my-feature
+```
+
+Open a pull request on GitHub. Three things happen automatically:
+
+- **PR Checks** — runs PHPCS, PHPStan, YAML lint, Composer audit, Gitleaks secret scanning, and PHPUnit tests
+- **Multidev** — creates a Pantheon preview environment (`pr-123`) with your code, posts the URL as a PR comment
+- **AI Review** — if Copilot is enabled, it reviews the diff for Drupal-specific issues
+
+### 4. Review and test
+
+- Click the multidev URL in the PR comment to test your changes on a real environment
+- Review the PR check results — fix any failures
+- Behat smoke tests run automatically against the multidev (login, access control, homepage)
+- Team reviews the code
+
+### 5. Merge
+
+Merge the PR into `main`. Three things happen automatically:
+
+- **Deploy** — code is pushed to Pantheon dev environment
+- **Post-deploy** — runs `drush updatedb`, `drush config:import`, `drush cache:rebuild`
+- **Cleanup** — the multidev environment is deleted
+
+### 6. Promote
+
+Promote through Pantheon environments as usual: dev → test → live.
+
+### What runs where
+
+| Event | What happens |
+| ----- | ------------ |
+| `git commit` | GrumPHP checks for debug code and PHPCS violations |
+| PR opened/updated | PHPCS, PHPStan, YAML lint, security audit, secret scanning, PHPUnit |
+| PR opened/updated | Pantheon multidev created, Behat smoke tests run against it |
+| PR opened/updated | Copilot AI review (if enabled) |
+| PR merged to main | Deploy to Pantheon dev, run drush commands, validate config sync |
+| PR closed | Multidev environment deleted |
 
 ## Gradual Adoption
 
