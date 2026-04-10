@@ -179,21 +179,39 @@ if [ ! "$(ls -A tests/behat/features 2>/dev/null)" ]; then
   echo "  Created tests/behat/features/ (add your .feature files here)"
 fi
 
+# Add allowed-packages to composer.json if not already present
+echo ""
+echo "Updating composer.json..."
+if grep -q "thronedigital/drupal-qa" composer.json 2>/dev/null; then
+  echo "  thronedigital/drupal-qa already in composer.json"
+else
+  # Add to allowed-packages using php since jq may not be available
+  php -r '
+    $json = json_decode(file_get_contents("composer.json"), true);
+    $allowed = $json["extra"]["drupal-scaffold"]["allowed-packages"] ?? [];
+    if (!in_array("thronedigital/drupal-qa", $allowed)) {
+      $allowed[] = "thronedigital/drupal-qa";
+      $json["extra"]["drupal-scaffold"]["allowed-packages"] = $allowed;
+      file_put_contents("composer.json", json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+    }
+  '
+  echo "  Added thronedigital/drupal-qa to allowed-packages"
+fi
+
+# Install the package
+echo ""
+echo "Installing thronedigital/drupal-qa..."
+composer require --dev thronedigital/drupal-qa
+
 echo ""
 echo "========================================"
-echo "  Next Steps"
+echo "  Almost Done!"
 echo "========================================"
 echo ""
-echo "1. Add the package:"
-echo "   composer require --dev thronedigital/drupal-qa"
+echo "Set these GitHub repo secrets (Settings > Secrets > Actions):"
+echo "  - PANTHEON_SSH_KEY      (private key authorized on Pantheon)"
+echo "  - PANTHEON_MACHINE_TOKEN (from Pantheon dashboard > Account > Machine Tokens)"
 echo ""
-echo "2. Add to allowed-packages in composer.json:"
-echo '   "extra": { "drupal-scaffold": { "allowed-packages": ["thronedigital/drupal-qa"] } }'
-echo ""
-echo "3. Set GitHub repo secrets:"
-echo "   - PANTHEON_SSH_KEY"
-echo "   - PANTHEON_MACHINE_TOKEN"
-echo ""
-echo "4. Commit and push!"
+echo "Then commit and push!"
 echo ""
 echo "Done."
