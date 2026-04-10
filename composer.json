@@ -15,15 +15,15 @@
         "mglaman/phpstan-drupal": "^2.0",
         "phpstan/extension-installer": "^1.4",
         "phpstan/phpstan-deprecation-rules": "^2.0",
-        "phpunit/phpunit": "^9.6 || ^10",
+        "phpunit/phpunit": "^9.6 || ^10 || ^11",
         "phpro/grumphp": "^2",
         "behat/mink": "^1.11",
         "drupal/drupal-extension": "^5.3",
         "dmore/behat-chrome-extension": "^1.4",
         "drevops/behat-steps": "^3",
         "drevops/behat-screenshot": "^2",
-        "symfony/phpunit-bridge": "^6.4",
-        "phpspec/prophecy-phpunit": "^2.2"
+        "symfony/phpunit-bridge": "^6.4 || ^7.0",
+        "phpspec/prophecy-phpunit": "^2.5"
     },
     "autoload": {
         "psr-4": {
