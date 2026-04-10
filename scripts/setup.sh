@@ -212,6 +212,20 @@ NEON
   echo "  Created phpstan.neon at level ${PHPSTAN_LEVEL}"
 fi
 
+# Add scaffolded .dist files to .gitignore
+DIST_FILES=("/behat.yml.dist" "/grumphp.yml.dist" "/phpstan.neon.dist" "/phpunit.xml.dist")
+if [ -f ".gitignore" ]; then
+  for f in "${DIST_FILES[@]}"; do
+    if ! grep -qF "$f" .gitignore 2>/dev/null; then
+      echo "$f" >> .gitignore
+    fi
+  done
+  echo "  Added .dist files to .gitignore"
+else
+  printf '%s\n' "${DIST_FILES[@]}" > .gitignore
+  echo "  Created .gitignore with .dist files"
+fi
+
 # Add allowed-packages to composer.json if not already present
 echo ""
 echo "Updating composer.json..."
