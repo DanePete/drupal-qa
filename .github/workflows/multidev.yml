@@ -74,16 +74,15 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p 2222 codeserver.dev.${{ inputs.pantheon_site_id }}.drush.in >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Delete and recreate multidev if it exists
+      - name: Create multidev environment if needed
         run: |
           if terminus multidev:list "${{ inputs.pantheon_site }}" --format=list --field=id 2>/dev/null | grep -q "^${{ env.MULTIDEV_NAME }}$"; then
-            echo "Deleting existing multidev ${{ env.MULTIDEV_NAME }}..."
-            terminus multidev:delete "${{ inputs.pantheon_site }}.${{ env.MULTIDEV_NAME }}" --delete-branch --yes || true
-            terminus workflow:wait "${{ inputs.pantheon_site }}" --max=300 || true
+            echo "Multidev ${{ env.MULTIDEV_NAME }} already exists — will push code update"
+          else
+            echo "Creating multidev ${{ env.MULTIDEV_NAME }} from ${{ inputs.source_env }}..."
+            terminus multidev:create "${{ inputs.pantheon_site }}.${{ inputs.source_env }}" "${{ env.MULTIDEV_NAME }}"
+            terminus workflow:wait "${{ inputs.pantheon_site }}" --max=300
           fi
-          echo "Creating multidev ${{ env.MULTIDEV_NAME }} from ${{ inputs.source_env }}..."
-          terminus multidev:create "${{ inputs.pantheon_site }}.${{ inputs.source_env }}" "${{ env.MULTIDEV_NAME }}"
-          terminus workflow:wait "${{ inputs.pantheon_site }}" --max=300
 
       - name: Push code to multidev
         run: |
