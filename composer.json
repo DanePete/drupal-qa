@@ -22,7 +22,7 @@
         "dmore/behat-chrome-extension": "^1.4",
         "drevops/behat-steps": "^3",
         "drevops/behat-screenshot": "^2",
-        "symfony/phpunit-bridge": "^6.4 || ^7.0",
+        "symfony/phpunit-bridge": "^6.4",
         "phpspec/prophecy-phpunit": "^2.2"
     },
     "autoload": {
