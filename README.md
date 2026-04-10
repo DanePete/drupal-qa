@@ -631,7 +631,7 @@ The package scaffolds a `.github/copilot-instructions.md` that tells GitHub Copi
 - Missing config schema, missing services.yml entries
 - Hardcoded credentials or API keys
 
-To enable: go to your repo's **Settings > Copilot > Code review** and turn it on. Then assign `@copilot` as a reviewer on any PR, or set up a ruleset to do it automatically.
+This is **optional** and requires a GitHub Copilot Business or Enterprise subscription. To enable: go to your repo's **Settings > Copilot > Code review** and turn it on. Then assign `@copilot` as a reviewer on any PR, or set up a ruleset to do it automatically. The instructions file works automatically once Copilot code review is enabled — no extra setup needed.
 
 ## Debugging CI Failures
 
