@@ -419,11 +419,22 @@ class PriceCalculatorTest extends UnitTestCase {
 ```
 
 **Key concepts in this example:**
-- **Mocking** (`createMock`) — creates fake versions of dependencies so your test doesn't need a database, config system, or running Drupal site. The test runs in milliseconds.
-- **`setUp()`** — runs before every test method. Set up your mocks and create the service here.
+
+- **Mocking** (`createMock`) — creates fake versions of dependencies so your test doesn't need a database, config system, or running Drupal site. The test runs in milliseconds. [PHPUnit mocking docs](https://docs.phpunit.de/en/9.6/test-doubles.html)
+- **`setUp()`** — runs before every test method. Set up your mocks and create the service here. [PHPUnit fixtures docs](https://docs.phpunit.de/en/9.6/fixtures.html)
+- **`UnitTestCase`** — Drupal's base class for unit tests. Provides helpers like `getStringTranslationStub()` and `getContainerWithCacheDisabled()`. [Drupal UnitTestCase docs](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/unit-testing-more-complicated-drupal-classes)
+- **`@coversDefaultClass`** — tells PHPUnit which class this test covers, used for code coverage reports. [PHPUnit annotations docs](https://docs.phpunit.de/en/9.6/annotations.html#coversdefaultclass)
+- **`@group`** — lets you run just one module's tests: `./vendor/bin/phpunit --group=my_module`
 - **Happy path test** — does the basic case work?
 - **Edge case test** — what about zero, null, empty values?
-- **Exception test** — does bad input get rejected properly?
+- **Exception test** (`expectException`) — does bad input get rejected? If the exception doesn't throw, the test fails. [PHPUnit exception testing docs](https://docs.phpunit.de/en/9.6/writing-tests-for-phpunit.html#testing-exceptions)
+
+**Further reading:**
+
+- [Drupal PHPUnit overview](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal) — types of tests, directory structure, naming conventions
+- [PHPUnit file structure and namespaces in Drupal](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/phpunit-file-structure-namespace-and-required-metadata) — where test files go, required metadata
+- [Running Drupal tests](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests) — how to run tests locally
+- [Drupal testing best practices](https://www.drupal.org/docs/develop/automated-testing) — when to use Unit vs Kernel vs Functional tests
 
 No config changes needed. The wildcard in `phpunit.xml.dist` picks it up.
 
