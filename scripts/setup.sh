@@ -139,7 +139,9 @@ jobs:
       phpcs_required: ${PHPCS_REQUIRED}
       phpstan_required: ${PHPSTAN_REQUIRED}
       phpcs_paths: '${PHPCS_PATHS}'
-    secrets: inherit
+    secrets:
+      PANTHEON_SSH_KEY: \${{ secrets.PANTHEON_SSH_KEY }}
+      PANTHEON_MACHINE_TOKEN: \${{ secrets.PANTHEON_MACHINE_TOKEN }}
 YAML
 echo "  Created .github/workflows/pr-checks.yml"
 
@@ -161,7 +163,9 @@ jobs:
       phpcs_required: ${PHPCS_REQUIRED}
       phpstan_required: ${PHPSTAN_REQUIRED}
       phpcs_paths: '${PHPCS_PATHS}'
-    secrets: inherit
+    secrets:
+      PANTHEON_SSH_KEY: \${{ secrets.PANTHEON_SSH_KEY }}
+      PANTHEON_MACHINE_TOKEN: \${{ secrets.PANTHEON_MACHINE_TOKEN }}
 YAML
 echo "  Created .github/workflows/deploy-pantheon.yml"
 
@@ -182,7 +186,9 @@ jobs:
       pantheon_site: ${SITE_NAME}
       pantheon_site_id: ${SITE_ID}
       run_behat: ${BEHAT_ENABLED}
-    secrets: inherit
+    secrets:
+      PANTHEON_SSH_KEY: \${{ secrets.PANTHEON_SSH_KEY }}
+      PANTHEON_MACHINE_TOKEN: \${{ secrets.PANTHEON_MACHINE_TOKEN }}
 YAML
 echo "  Created .github/workflows/multidev.yml"
 
@@ -200,7 +206,8 @@ jobs:
     uses: DanePete/drupal-qa/.github/workflows/multidev-cleanup.yml@v1
     with:
       pantheon_site: ${SITE_NAME}
-    secrets: inherit
+    secrets:
+      PANTHEON_MACHINE_TOKEN: \${{ secrets.PANTHEON_MACHINE_TOKEN }}
 YAML
 echo "  Created .github/workflows/multidev-cleanup.yml"
 

@@ -527,7 +527,9 @@ jobs:
     with:
       phpcs_required: false    # set true when codebase is clean
       phpstan_required: false  # set true when codebase is clean
-    secrets: inherit
+    secrets:
+      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
+      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
 ```
 
 ### 2. Deploy to Pantheon
@@ -545,7 +547,9 @@ jobs:
     with:
       pantheon_site: my-site-name
       pantheon_site_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-    secrets: inherit
+    secrets:
+      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
+      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
 ```
 
 ### 3. Multidev Per PR
@@ -564,7 +568,9 @@ jobs:
     with:
       pantheon_site: my-site-name
       pantheon_site_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-    secrets: inherit
+    secrets:
+      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
+      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
 ```
 
 ### 4. Multidev Cleanup
@@ -582,7 +588,8 @@ jobs:
     uses: DanePete/drupal-qa/.github/workflows/multidev-cleanup.yml@v1
     with:
       pantheon_site: my-site-name
-    secrets: inherit
+    secrets:
+      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
 ```
 
 ### Required Secrets
