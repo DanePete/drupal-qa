@@ -56,8 +56,15 @@ if [[ "$OPT_NORMALIZE" =~ ^[Yy] ]]; then
   EXTRAS_SELECTED+=("composer-normalize")
 fi
 
+# PHPCBF autofix
+read -rp "5. PHPCBF autofix (automatically fix coding standard violations in PRs)? (y/n) [n]: " OPT_PHPCBF
+OPT_PHPCBF=${OPT_PHPCBF:-n}
+if [[ "$OPT_PHPCBF" =~ ^[Yy] ]]; then
+  EXTRAS_SELECTED+=("phpcbf")
+fi
+
 # Rector (automated refactoring / deprecation fixes)
-read -rp "5. Rector dry-run (detect deprecated code and suggest automated fixes)? (y/n) [n]: " OPT_RECTOR
+read -rp "6. Rector dry-run (detect deprecated code and suggest automated fixes)? (y/n) [n]: " OPT_RECTOR
 OPT_RECTOR=${OPT_RECTOR:-n}
 if [[ "$OPT_RECTOR" =~ ^[Yy] ]]; then
   EXTRAS_SELECTED+=("rector")
@@ -98,6 +105,9 @@ for extra in "${EXTRAS_SELECTED[@]}"; do
       composer require --dev phpstan/phpstan-strict-rules --no-interaction --quiet 2>/dev/null || \
         echo "    Note: phpstan/phpstan-strict-rules may need manual install"
       echo "    Added PHPStan strict rules (catches unused code patterns)"
+      ;;
+    phpcbf)
+      echo "  PHPCBF autofix enabled (already installed via drupal/coder)"
       ;;
     composer-normalize)
       echo "  Installing composer normalize..."
@@ -210,6 +220,24 @@ YAML
         continue-on-error: true
 YAML
       echo "  Added security scanning step"
+      ;;
+    phpcbf)
+      cat >> .github/workflows/pr-extras.yml << 'YAML'
+
+      - name: PHPCBF Autofix
+        run: |
+          ./vendor/bin/phpcbf \
+            --standard=Drupal \
+            --extensions=php,module,inc,install,theme \
+            --ignore=*/web/modules/contrib/*,*/web/themes/contrib/* \
+            web/modules/custom/ web/themes/custom/ || true
+          if [ -n "$(git diff --name-only)" ]; then
+            echo "::warning::PHPCBF fixed coding standard violations. Run locally: ./vendor/bin/phpcbf --standard=Drupal web/modules/custom/"
+            git diff --stat
+          fi
+        continue-on-error: true
+YAML
+      echo "  Added PHPCBF autofix step"
       ;;
     unused-code)
       cat >> .github/workflows/pr-extras.yml << 'YAML'

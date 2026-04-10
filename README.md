@@ -21,6 +21,7 @@ Reusable CI/QA toolchain for Drupal 10+ projects. One `composer require` gives y
 - [Adding Project-Specific Tests](#adding-project-specific-tests)
 - [Customizing Configs](#customizing-configs)
 - [Optional Extras](#optional-extras)
+- [Opinionated Defaults](#opinionated-defaults)
 - [Upgrading](#upgrading)
 - [Troubleshooting](#troubleshooting)
 
@@ -797,9 +798,30 @@ Pick and choose from:
 | Security scanning | OWASP checks for SQL injection, XSS, command injection in custom code |
 | Unused code detection | Finds dead code, unused imports, unreachable methods |
 | Composer normalize | Enforces consistent composer.json formatting |
+| PHPCBF autofix | Shows what coding standard violations can be auto-fixed — run locally with `./vendor/bin/phpcbf` |
 | Rector dry-run | Detects deprecated Drupal API usage and suggests automated fixes |
 
 Extras run in a separate `pr-extras.yml` workflow so they **never block your main PR checks**. They report issues as warnings only.
+
+## Opinionated Defaults
+
+This package makes choices so you don't have to. Here's what we chose and why:
+
+**PHPStan level 1 by default.** Most existing Drupal projects can't pass level 5 without weeks of cleanup. Level 1 gives you real value (undefined variables, unknown classes) without drowning you in noise. The setup script lets you pick a higher level, and the AI prompts help you level up incrementally.
+
+**PHPCS and PHPStan don't block PRs by default on deploy.** PHPStan uses `continue-on-error` and PHPCS can be toggled with `phpcs_required: false`. The goal is to let teams adopt gradually — see violations, fix them over time, then flip the switch when ready.
+
+**Behat over Nightwatch.** Behat with `drupal/drupal-extension` speaks Drupal natively — it knows about roles, users, regions, and content types. Nightwatch is a better general-purpose browser testing tool, but for Drupal-specific smoke tests, Behat gets you further with less code.
+
+**GrumPHP pre-commit hooks.** Catching debug code and PHPCS violations before they're pushed saves everyone time. Some teams find pre-commit hooks annoying — if that's you, disable the scaffold: `"[project-root]/grumphp.yml.dist": false`.
+
+**Pantheon-first.** The workflows are built for Pantheon (multidev, Terminus, git push deploy). If you're on Acquia or another host, you'll need to swap the deploy workflows. The QA tooling (PHPCS, PHPStan, PHPUnit, Behat, GrumPHP, secret scanning) works on any Drupal project regardless of hosting.
+
+**Secret scanning doesn't block.** Gitleaks runs as `continue-on-error: true` so it warns but doesn't fail the build. A false positive shouldn't prevent a deploy. If you want it to block, remove `continue-on-error` from the workflow.
+
+**`CLAUDE.md` and Copilot instructions are scaffolded.** Every project gets AI-aware coding instructions out of the box. If your team doesn't use AI tools, these files are harmless — they just sit there. If anyone starts using Claude Code or Copilot, the project is already configured correctly.
+
+**`TRUE`, `FALSE`, `NULL` uppercase.** This is the Drupal coding standard, not a personal preference. The PHPCS config enforces it.
 
 ## Upgrading
 
