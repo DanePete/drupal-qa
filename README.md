@@ -57,6 +57,8 @@ Generate the following files:
 5. `tests/behat/bootstrap/FeatureContext.php` — extends DrupalQa base context
 6. Show me the composer.json changes needed (add thronedigital/drupal-qa to
    require-dev and allowed-packages)
+7. Add the scaffolded .dist files to .gitignore (behat.yml.dist, grumphp.yml.dist,
+   phpstan.neon.dist, phpunit.xml.dist)
 
 Reference the workflow inputs documented at:
 https://github.com/DanePete/drupal-qa#workflow-inputs
