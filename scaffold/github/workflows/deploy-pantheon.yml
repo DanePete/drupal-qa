@@ -1,0 +1,187 @@
+name: Deploy to Pantheon
+
+on:
+  workflow_call:
+    inputs:
+      php_version:
+        type: string
+        default: '8.3'
+      pantheon_site:
+        type: string
+        required: true
+        description: 'Pantheon site machine name (e.g. my-site)'
+      pantheon_site_id:
+        type: string
+        required: true
+        description: 'Pantheon site UUID'
+      phpcs_required:
+        type: boolean
+        default: true
+      phpstan_required:
+        type: boolean
+        default: false
+      phpcs_paths:
+        type: string
+        default: 'web/modules/custom/ web/themes/custom/'
+      yamllint_enabled:
+        type: boolean
+        default: true
+    secrets:
+      PANTHEON_SSH_KEY:
+        required: true
+      PANTHEON_MACHINE_TOKEN:
+        required: true
+
+concurrency:
+  group: deploy-pantheon
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test Before Deploy
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.4
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: drupal_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          extensions: mbstring, xml, curl, gd, zip, pdo, pdo_mysql, bcmath, soap, redis
+          tools: composer:v2
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: PHPCS
+        run: |
+          ./vendor/bin/phpcs \
+            --standard=Drupal \
+            --extensions=php,module,inc,install,theme \
+            --exclude=Drupal.Files.LineLength \
+            --ignore=*/web/modules/contrib/*,*/web/themes/contrib/* \
+            --warning-severity=0 \
+            ${{ inputs.phpcs_paths }}
+        continue-on-error: ${{ !inputs.phpcs_required }}
+
+      - name: PHPStan
+        run: |
+          ./vendor/bin/phpstan analyse \
+            --configuration=phpstan.neon \
+            --memory-limit=-1 \
+            --no-progress
+        continue-on-error: ${{ !inputs.phpstan_required }}
+
+      - name: YAML Lint
+        if: ${{ inputs.yamllint_enabled }}
+        run: |
+          pip install --quiet yamllint
+          yamllint -d "{extends: default, rules: {line-length: disable, truthy: disable, document-start: disable, braces: disable, comments-indentation: disable, empty-lines: disable}}" config/
+
+      - name: Composer Audit
+        run: composer audit || echo "::warning::Security vulnerabilities found - review before promoting to live"
+        continue-on-error: true
+
+      - name: PHPUnit Unit Tests
+        run: |
+          if find web/modules/custom/*/tests/src/Unit -name '*Test.php' 2>/dev/null | grep -q .; then
+            ./vendor/bin/phpunit --testsuite=unit --testdox
+          else
+            echo "No unit tests found - skipping"
+          fi
+        env:
+          SIMPLETEST_DB: mysql://root:root@127.0.0.1:3306/drupal_test
+
+      - name: PHPUnit Kernel Tests
+        run: |
+          if find web/modules/custom/*/tests/src/Kernel -name '*Test.php' 2>/dev/null | grep -q .; then
+            ./vendor/bin/phpunit --testsuite=kernel --testdox
+          else
+            echo "No kernel tests found - skipping"
+          fi
+        env:
+          SIMPLETEST_DB: mysql://root:root@127.0.0.1:3306/drupal_test
+          SIMPLETEST_BASE_URL: http://localhost
+
+  deploy:
+    name: Push to Pantheon Dev
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PANTHEON_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p 2222 codeserver.dev.${{ inputs.pantheon_site_id }}.drush.in >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          tools: composer:v2
+
+      - name: Install Terminus
+        run: |
+          mkdir -p ~/terminus && cd ~/terminus
+          curl -L "https://github.com/pantheon-systems/terminus/releases/latest/download/terminus.phar" -o terminus
+          chmod +x terminus
+          echo "$HOME/terminus" >> $GITHUB_PATH
+
+      - name: Authenticate Terminus
+        run: terminus auth:login --machine-token="${{ secrets.PANTHEON_MACHINE_TOKEN }}"
+
+      - name: Push to Pantheon
+        run: |
+          git remote add pantheon ssh://codeserver.dev.${{ inputs.pantheon_site_id }}@codeserver.dev.${{ inputs.pantheon_site_id }}.drush.in:2222/~/repository.git
+          git push pantheon HEAD:master
+
+      - name: Post-deploy commands
+        run: |
+          sleep 10
+          terminus env:wake ${{ inputs.pantheon_site }}.dev || true
+          terminus drush ${{ inputs.pantheon_site }}.dev -- updatedb -y || true
+          terminus drush ${{ inputs.pantheon_site }}.dev -- config:import -y || true
+          terminus drush ${{ inputs.pantheon_site }}.dev -- cache:rebuild || true
+
+      - name: Validate config sync
+        run: |
+          echo "Checking for unexported config changes..."
+          CONFIG_STATUS=$(terminus drush ${{ inputs.pantheon_site }}.dev -- config:status --format=list 2>/dev/null || true)
+          if [ -n "$CONFIG_STATUS" ] && [ "$CONFIG_STATUS" != "No differences between DB and sync directory." ]; then
+            echo "::warning::Config out of sync after deploy:"
+            echo "$CONFIG_STATUS"
+          else
+            echo "Config is in sync."
+          fi

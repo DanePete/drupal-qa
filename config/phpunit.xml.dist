@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="web/core/tests/bootstrap.php"
+         colors="true"
+         beStrictAboutTestsThatDoNotTestAnything="true"
+         beStrictAboutOutputDuringTests="true"
+         beStrictAboutChangesToGlobalState="true"
+         failOnWarning="true"
+         cacheResult="false">
+
+  <php>
+    <ini name="error_reporting" value="32767"/>
+    <ini name="memory_limit" value="-1"/>
+    <env name="SIMPLETEST_BASE_URL" value="http://localhost"/>
+    <env name="SIMPLETEST_DB" value="mysql://root:root@127.0.0.1:3306/drupal_test"/>
+    <env name="BROWSERTEST_OUTPUT_DIRECTORY" value=""/>
+    <env name="SYMFONY_DEPRECATIONS_HELPER" value="disabled"/>
+  </php>
+
+  <testsuites>
+    <!-- Package-provided smoke tests -->
+    <testsuite name="drupal-qa">
+      <directory suffix="Test.php">vendor/thronedigital/drupal-qa/tests/src/Unit</directory>
+    </testsuite>
+    <!-- Project-specific unit tests (auto-discovered) -->
+    <testsuite name="unit">
+      <directory suffix="Test.php">web/modules/custom/*/tests/src/Unit</directory>
+    </testsuite>
+    <!-- Project-specific kernel tests (auto-discovered) -->
+    <testsuite name="kernel">
+      <directory suffix="Test.php">web/modules/custom/*/tests/src/Kernel</directory>
+    </testsuite>
+  </testsuites>
+
+</phpunit>

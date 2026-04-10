@@ -1,0 +1,18 @@
+parameters:
+  level: 1
+  paths:
+    - web/modules/custom
+    - web/themes
+  excludePaths:
+    - web/themes/contrib
+  fileExtensions:
+    - php
+    - module
+    - inc
+    - install
+    - theme
+  ignoreErrors:
+    - '#^Unsafe usage of new static#'
+    - '#Drupal calls should be avoided in classes, use dependency injection instead#'
+    - '#^Plugin definitions cannot be altered.#'
+    - '#^Class .* extends @internal class#'

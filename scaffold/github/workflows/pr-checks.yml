@@ -1,0 +1,183 @@
+name: PR Checks
+
+on:
+  workflow_call:
+    inputs:
+      php_version:
+        type: string
+        default: '8.3'
+      phpcs_required:
+        type: boolean
+        default: true
+        description: 'If false, PHPCS failures warn but do not block the PR'
+      phpstan_required:
+        type: boolean
+        default: false
+        description: 'If false, PHPStan failures warn but do not block the PR'
+      phpcs_paths:
+        type: string
+        default: 'web/modules/custom/ web/themes/custom/'
+        description: 'Space-separated paths to scan with PHPCS'
+      yamllint_enabled:
+        type: boolean
+        default: true
+        description: 'Enable YAML linting of config/ directory'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          extensions: mbstring, xml, curl, gd, zip, pdo, pdo_mysql, bcmath, soap
+          tools: composer:v2
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: PHPCS - Drupal Coding Standards
+        run: |
+          ./vendor/bin/phpcs \
+            --standard=Drupal \
+            --extensions=php,module,inc,install,theme \
+            --exclude=Drupal.Files.LineLength \
+            --ignore=*/web/modules/contrib/*,*/web/themes/contrib/* \
+            --warning-severity=0 \
+            ${{ inputs.phpcs_paths }}
+        continue-on-error: ${{ !inputs.phpcs_required }}
+
+      - name: PHPStan - Static Analysis
+        run: |
+          ./vendor/bin/phpstan analyse \
+            --configuration=phpstan.neon \
+            --memory-limit=-1 \
+            --no-progress
+        continue-on-error: ${{ !inputs.phpstan_required }}
+
+      - name: YAML Lint - Config Sync
+        if: ${{ inputs.yamllint_enabled }}
+        run: |
+          pip install --quiet yamllint
+          yamllint -d "{extends: default, rules: {line-length: disable, truthy: disable, document-start: disable, braces: disable, comments-indentation: disable, empty-lines: disable}}" config/
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          tools: composer:v2
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Composer Audit - Dependency Vulnerabilities
+        run: composer audit || echo "::warning::Security vulnerabilities found - review before promoting to live"
+        continue-on-error: true
+
+  phpunit:
+    name: PHPUnit Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    services:
+      mariadb:
+        image: mariadb:10.4
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: drupal_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          extensions: mbstring, xml, curl, gd, zip, pdo, pdo_mysql, bcmath, soap, redis
+          tools: composer:v2
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Run PHPUnit Unit Tests
+        run: |
+          if find web/modules/custom/*/tests/src/Unit -name '*Test.php' 2>/dev/null | grep -q .; then
+            ./vendor/bin/phpunit --testsuite=unit --testdox
+          else
+            echo "No unit tests found - skipping"
+          fi
+        env:
+          SIMPLETEST_DB: mysql://root:root@127.0.0.1:3306/drupal_test
+
+      - name: Run PHPUnit Kernel Tests
+        run: |
+          if find web/modules/custom/*/tests/src/Kernel -name '*Test.php' 2>/dev/null | grep -q .; then
+            ./vendor/bin/phpunit --testsuite=kernel --testdox
+          else
+            echo "No kernel tests found - skipping"
+          fi
+        env:
+          SIMPLETEST_DB: mysql://root:root@127.0.0.1:3306/drupal_test
+          SIMPLETEST_BASE_URL: http://localhost
+
+      - name: Run Drupal QA Smoke Tests
+        run: ./vendor/bin/phpunit --testsuite=drupal-qa --testdox
+        env:
+          SIMPLETEST_DB: mysql://root:root@127.0.0.1:3306/drupal_test

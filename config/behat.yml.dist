@@ -1,0 +1,44 @@
+default:
+  autoload:
+    - '%paths.base%/tests/behat/bootstrap'
+  suites:
+    default:
+      paths:
+        - '%paths.base%/tests/behat/features'
+        - '%paths.base%/vendor/thronedigital/drupal-qa/tests/behat/features/drupal'
+      contexts:
+        - FeatureContext
+        - Drupal\DrupalExtension\Context\DrupalContext
+        - Drupal\DrupalExtension\Context\MinkContext
+        - Drupal\DrupalExtension\Context\MessageContext
+    commerce:
+      paths:
+        - '%paths.base%/vendor/thronedigital/drupal-qa/tests/behat/features/commerce'
+      contexts:
+        - FeatureContext
+        - Drupal\DrupalExtension\Context\DrupalContext
+        - Drupal\DrupalExtension\Context\MinkContext
+        - Drupal\DrupalExtension\Context\MessageContext
+  extensions:
+    DMore\ChromeExtension\Behat\ServiceContainer\ChromeExtension: ~
+    Drupal\MinkExtension:
+      browserkit_http: ~
+      base_url: '${BEHAT_BASE_URL:-http://localhost}'
+      browser_name: chrome
+      javascript_session: chrome_headless
+      sessions:
+        default:
+          browserkit_http: ~
+        chrome_headless:
+          chrome:
+            api_url: 'http://localhost:9222'
+    Drupal\DrupalExtension:
+      blackbox: ~
+      api_driver: drupal
+      drupal:
+        drupal_root: 'web'
+      selectors:
+        message_selector: '.messages'
+        error_message_selector: '.messages--error'
+        success_message_selector: '.messages--status'
+        warning_message_selector: '.messages--warning'

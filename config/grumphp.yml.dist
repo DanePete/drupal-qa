@@ -1,0 +1,48 @@
+grumphp:
+  ascii:
+    succeeded: ~
+    failed: ~
+  tasks:
+    git_blacklist:
+      keywords:
+        - 'die;'
+        - 'die('
+        - 'exit;'
+        - 'exit('
+        - 'ksm('
+        - 'kint('
+        - 'phpinfo('
+        - 'print_r('
+        - 'var_dump('
+      triggered_by: ['php', 'module', 'inc', 'install', 'theme']
+      whitelist_patterns:
+        - /^web\/modules\/(.*)/
+        - /^web\/themes\/(.*)/
+      ignore_patterns:
+        - /^web\/modules\/contrib\/(.*)/
+        - /^web\/themes\/contrib\/(.*)/
+
+    phpcs:
+      standard: Drupal
+      triggered_by: ['php', 'module', 'inc', 'install', 'theme']
+      whitelist_patterns:
+        - /^web\/modules\/(.*)/
+        - /^web\/themes\/(.*)/
+      ignore_patterns:
+        - /^web\/modules\/contrib\/(.*)/
+        - /^web\/themes\/contrib\/(.*)/
+      exclude:
+        - Drupal.Files.LineLength
+
+    phpstan:
+      level: 1
+      triggered_by: ['php', 'module', 'inc', 'install', 'theme']
+      memory_limit: '-1'
+      ignore_patterns:
+        - /^vendor\/(.*)/
+        - /^web\/core\/(.*)/
+        - /^web\/libraries\/(.*)/
+        - /^web\/profiles\/(.*)/
+        - /^web\/sites\/(.*)/
+        - /^web\/modules\/contrib\/(.*)/
+        - /^web\/themes\/contrib\/(.*)/

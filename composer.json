@@ -1,0 +1,56 @@
+{
+    "name": "thronedigital/drupal-qa",
+    "description": "Reusable CI/QA toolchain for Drupal projects. Provides PHPUnit, PHPCS, PHPStan, Behat, and GrumPHP with sensible defaults and generic smoke tests.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Dane Petersen"
+        }
+    ],
+    "require": {
+        "php": ">=8.2"
+    },
+    "require-dev": {
+        "drupal/coder": "^9.0",
+        "phpstan/phpstan": "^2.1",
+        "mglaman/phpstan-drupal": "^2.0",
+        "phpstan/extension-installer": "^1.4",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
+        "phpunit/phpunit": "^9.6 || ^10",
+        "phpro/grumphp": "^2",
+        "behat/mink": "^1.11",
+        "drupal/drupal-extension": "^5.3",
+        "dmore/behat-chrome-extension": "^1.4",
+        "drevops/behat-steps": "^3",
+        "drevops/behat-screenshot": "^2",
+        "symfony/phpunit-bridge": "^6.4 || ^7.0",
+        "phpspec/prophecy-phpunit": "^2.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "DrupalQa\\": "src/"
+        }
+    },
+    "extra": {
+        "drupal-scaffold": {
+            "file-mapping": {
+                "[project-root]/phpunit.xml.dist": "config/phpunit.xml.dist",
+                "[project-root]/phpstan.neon.dist": "config/phpstan.neon.dist",
+                "[project-root]/grumphp.yml.dist": "config/grumphp.yml.dist",
+                "[project-root]/behat.yml.dist": "config/behat.yml.dist"
+            }
+        },
+        "grumphp": {
+            "config-default-path": "vendor/thronedigital/drupal-qa/config/grumphp.yml.dist"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true,
+            "phpro/grumphp": true,
+            "phpstan/extension-installer": true
+        }
+    }
+}
