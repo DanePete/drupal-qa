@@ -31,6 +31,11 @@ read -rp "Should PHPCS failures block PRs? (y/n) [y]: " PHPCS_REQ
 PHPCS_REQ=${PHPCS_REQ:-y}
 if [[ "$PHPCS_REQ" =~ ^[Yy] ]]; then PHPCS_REQUIRED="true"; else PHPCS_REQUIRED="false"; fi
 
+echo ""
+echo "  PHPStan levels: 1 = lenient (good for starting out), 5 = moderate, 9 = strictest"
+read -rp "PHPStan level [1]: " PHPSTAN_LEVEL
+PHPSTAN_LEVEL=${PHPSTAN_LEVEL:-1}
+
 read -rp "Should PHPStan failures block PRs? (y/n) [n]: " PHPSTAN_REQ
 PHPSTAN_REQ=${PHPSTAN_REQ:-n}
 if [[ "$PHPSTAN_REQ" =~ ^[Yy] ]]; then PHPSTAN_REQUIRED="true"; else PHPSTAN_REQUIRED="false"; fi
@@ -177,6 +182,17 @@ fi
 mkdir -p tests/behat/features
 if [ ! "$(ls -A tests/behat/features 2>/dev/null)" ]; then
   echo "  Created tests/behat/features/ (add your .feature files here)"
+fi
+
+# Create phpstan.neon override if level != 1
+if [ "$PHPSTAN_LEVEL" != "1" ]; then
+  cat > phpstan.neon << NEON
+includes:
+  - phpstan.neon.dist
+parameters:
+  level: ${PHPSTAN_LEVEL}
+NEON
+  echo "  Created phpstan.neon at level ${PHPSTAN_LEVEL}"
 fi
 
 # Add allowed-packages to composer.json if not already present

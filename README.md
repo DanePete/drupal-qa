@@ -486,6 +486,26 @@ To prevent a specific file from being scaffolded:
 }
 ```
 
+## Optional Extras
+
+After the base setup, you can add deeper code quality checks with a second script:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/DanePete/drupal-qa/main/scripts/setup-extras.sh)
+```
+
+Pick and choose from:
+
+| Extra | What it does |
+| ----- | ------------ |
+| PHPStan strict (level 5+) | Catches hallucinated methods, wrong types, bad Drupal API usage |
+| Security scanning | OWASP checks for SQL injection, XSS, command injection in custom code |
+| Unused code detection | Finds dead code, unused imports, unreachable methods |
+| Composer normalize | Enforces consistent composer.json formatting |
+| Rector dry-run | Detects deprecated Drupal API usage and suggests automated fixes |
+
+Extras run in a separate `pr-extras.yml` workflow so they **never block your main PR checks**. They report issues as warnings only.
+
 ## Upgrading
 
 To get the latest configs and tests:
