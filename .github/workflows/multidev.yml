@@ -74,26 +74,26 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p 2222 codeserver.dev.${{ inputs.pantheon_site_id }}.drush.in >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Create or update multidev environment
+      - name: Delete and recreate multidev if it exists
         run: |
           if terminus multidev:list "${{ inputs.pantheon_site }}" --format=list --field=id 2>/dev/null | grep -q "^${{ env.MULTIDEV_NAME }}$"; then
-            echo "Multidev ${{ env.MULTIDEV_NAME }} already exists — will push code update"
-          else
-            echo "Creating multidev ${{ env.MULTIDEV_NAME }} from ${{ inputs.source_env }}..."
-            terminus multidev:create "${{ inputs.pantheon_site }}.${{ inputs.source_env }}" "${{ env.MULTIDEV_NAME }}" || true
-            echo "Waiting for environment to initialize..."
-            sleep 15
+            echo "Deleting existing multidev ${{ env.MULTIDEV_NAME }}..."
+            terminus multidev:delete "${{ inputs.pantheon_site }}.${{ env.MULTIDEV_NAME }}" --delete-branch --yes || true
+            terminus workflow:wait "${{ inputs.pantheon_site }}" --max=300 || true
           fi
+          echo "Creating multidev ${{ env.MULTIDEV_NAME }} from ${{ inputs.source_env }}..."
+          terminus multidev:create "${{ inputs.pantheon_site }}.${{ inputs.source_env }}" "${{ env.MULTIDEV_NAME }}"
+          terminus workflow:wait "${{ inputs.pantheon_site }}" --max=300
 
       - name: Push code to multidev
         run: |
           git remote add pantheon ssh://codeserver.dev.${{ inputs.pantheon_site_id }}@codeserver.dev.${{ inputs.pantheon_site_id }}.drush.in:2222/~/repository.git
           git push pantheon HEAD:refs/heads/${{ env.MULTIDEV_NAME }} --force
 
-      - name: Run post-deploy commands
+      - name: Wait for code sync and run post-deploy commands
         run: |
-          echo "Waiting for Pantheon to sync code..."
-          sleep 10
+          echo "Waiting for Pantheon to finish code sync..."
+          terminus workflow:wait "${{ inputs.pantheon_site }}" --max=300
           terminus env:wake "${{ inputs.pantheon_site }}.${{ env.MULTIDEV_NAME }}" || true
           terminus drush "${{ inputs.pantheon_site }}.${{ env.MULTIDEV_NAME }}" -- updatedb -y || true
           terminus drush "${{ inputs.pantheon_site }}.${{ env.MULTIDEV_NAME }}" -- config:import -y || true
