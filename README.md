@@ -325,6 +325,73 @@ class MyServiceTest extends UnitTestCase {
 
 No config changes needed. The wildcard in `phpunit.xml.dist` picks it up.
 
+### Using AI to Generate Unit Tests
+
+These prompts work well with Claude, ChatGPT, or any AI assistant that can read your codebase.
+
+**Find what to test:**
+
+```text
+Look at my custom modules in web/modules/custom/. For each module, identify
+services, plugins, and utility classes that have testable business logic.
+Rank them by complexity and tell me which ones would benefit most from
+unit tests. Skip simple CRUD or pass-through services.
+```
+
+**Generate tests for a specific service:**
+
+```text
+Read web/modules/custom/my_module/src/Service/MyService.php and generate
+PHPUnit unit tests for it. The test should:
+- Extend Drupal\Tests\UnitTestCase
+- Live at web/modules/custom/my_module/tests/src/Unit/Service/MyServiceTest.php
+- Mock all injected dependencies
+- Test each public method including edge cases
+- Follow Drupal coding standards
+```
+
+**Generate tests for all services in a module:**
+
+```text
+Read all files in web/modules/custom/my_module/src/ and generate unit tests
+for every service and plugin that has logic worth testing. Put each test in
+the correct namespace under web/modules/custom/my_module/tests/src/Unit/.
+Mock dependencies using PHPUnit mock builder or Prophecy. Skip tests for
+classes that are just wiring (empty constructors, single-line delegation).
+```
+
+**Generate tests based on existing patterns:**
+
+```text
+Look at the existing unit tests in web/modules/custom/ to understand the
+testing patterns and style used in this project. Then find custom modules
+that don't have tests yet and generate tests that follow the same patterns.
+```
+
+**Generate Behat features from manual QA steps:**
+
+```text
+I manually test this site by doing the following:
+1. Log in as an admin
+2. Go to /admin/commerce/orders and verify the page loads
+3. Create a test order and verify it appears in the list
+4. Log out and verify I can't access /admin
+
+Convert these manual steps into Behat .feature files using Gherkin syntax.
+Use step definitions from drupal/drupal-extension and drevops/behat-steps.
+Put the files in tests/behat/features/.
+```
+
+**Audit existing test coverage:**
+
+```text
+Compare the custom modules in web/modules/custom/ against the test files
+in each module's tests/ directory. Give me a coverage report showing:
+- Modules with no tests at all
+- Services/plugins that exist but have no corresponding test
+- Test files that exist but may be outdated (testing methods that no longer exist)
+```
+
 ### Behat
 
 Add `.feature` files in `tests/behat/features/` — they run alongside the package features.
