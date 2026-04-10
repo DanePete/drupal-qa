@@ -1,13 +1,16 @@
 # drupal-qa
 
-Reusable CI/QA toolchain for Drupal projects. One `composer require` gives you PHPUnit, PHPCS, PHPStan, Behat, and GrumPHP with sensible defaults, generic smoke tests, and reusable GitHub Actions workflows for Pantheon.
+Reusable CI/QA toolchain for Drupal 10+ projects. One `composer require` gives you automated testing, code quality checks, AI-powered PR reviews, and GitHub Actions workflows for Pantheon — with sensible defaults that work out of the box.
 
-## Prerequisites
+## What You Get
 
-- A Drupal 10+ project using Composer
-- A Pantheon hosting account (for deploy/multidev workflows)
-- A GitHub repository
-- PHP 8.2+
+- **Automated PR checks** — PHPCS, PHPStan, YAML lint, security audit, PHPUnit on every pull request
+- **Preview environments** — Pantheon multidev created automatically for each PR
+- **Smoke tests** — Behat tests verify login, access control, homepage, and commerce flows
+- **Pre-commit hooks** — GrumPHP catches debug code and coding violations before you push
+- **AI PR reviews** — GitHub Copilot reviews every PR for Drupal-specific issues (optional)
+- **AI coding instructions** — CLAUDE.md scaffolded with Drupal best practices for Claude Code, Cursor, etc.
+- **Ready-to-use AI prompts** — generate unit tests, fix violations, debug CI failures
 
 ## Quick Setup
 
@@ -24,8 +27,9 @@ The script will:
 1. Ask for your Pantheon site name, UUID, and preferences
 2. Generate all 4 workflow files
 3. Create a FeatureContext extending the base
-4. Add `thronedigital/drupal-qa` to `allowed-packages` in your `composer.json`
-5. Run `composer require --dev thronedigital/drupal-qa`
+4. Add `.dist` files to `.gitignore`
+5. Add `thronedigital/drupal-qa` to `allowed-packages` in your `composer.json`
+6. Run `composer require --dev thronedigital/drupal-qa`
 
 The only manual step left is adding GitHub secrets (see [Required Secrets](#required-secrets)).
 
@@ -68,6 +72,182 @@ https://github.com/DanePete/drupal-qa#workflow-inputs
 
 See [Installation](#installation) and [GitHub Actions Setup](#github-actions-setup) below.
 
+## Gradual Adoption
+
+When you first install this on an existing project, you'll likely have PHPCS and PHPStan violations. The `phpcs_required` and `phpstan_required` flags let you adopt gradually:
+
+```yaml
+# Day 1: report violations but don't block anything
+phpcs_required: false
+phpstan_required: false
+
+# After cleaning up PHPCS violations: start enforcing
+phpcs_required: true
+phpstan_required: false
+
+# After cleaning up PHPStan violations: full enforcement
+phpcs_required: true
+phpstan_required: true
+```
+
+When set to `false`, violations show as warnings in the PR checks but won't block the merge.
+
+To change these, just edit the value in your `.github/workflows/pr-checks.yml` (and `deploy-pantheon.yml` if you have one) and commit. It's one line.
+
+**AI prompt to clean up violations:**
+
+```text
+Run `./vendor/bin/phpcs --standard=Drupal --extensions=php,module,inc,install,theme
+web/modules/custom/` and fix every violation. Group fixes into logical commits
+(one per module or one per violation type). Don't change any logic — only
+formatting, spacing, docblocks, and naming conventions.
+```
+
+```text
+Run `./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress` and
+fix every error. For each fix, explain what was wrong and why the fix is correct.
+Don't suppress errors with @phpstan-ignore unless there's genuinely no other option.
+```
+
+## AI PR Reviews
+
+The package scaffolds a `.github/copilot-instructions.md` that tells GitHub Copilot how to review PRs for this project:
+
+- Deprecated Drupal API usage
+- Security issues (XSS, SQL injection, missing access checks)
+- `\Drupal::` static calls that should use dependency injection
+- Debug code left behind (ksm, kint, var_dump)
+- Performance issues (entity loads in loops, missing caching)
+- Missing config schema, missing services.yml entries
+- Hardcoded credentials or API keys
+
+This is **optional** and requires a GitHub Copilot Business or Enterprise subscription. To enable: go to your repo's **Settings > Copilot > Code review** and turn it on. Then assign `@copilot` as a reviewer on any PR, or set up a ruleset to do it automatically. The instructions file works automatically once Copilot code review is enabled — no extra setup needed.
+
+It also scaffolds a `CLAUDE.md` with Drupal-specific instructions for Claude Code — dependency injection rules, security checklist, testing patterns, config management, drush commands, and code style guidelines. Any AI tool that reads `CLAUDE.md` will know how to work with Drupal projects correctly.
+
+## Using AI to Generate Tests
+
+These prompts work with any AI coding tool that can read your codebase (Claude Code, Cursor, Copilot, Windsurf, etc.).
+
+**Find what to test:**
+
+```text
+Look at my custom modules in web/modules/custom/. For each module, identify
+services, plugins, and utility classes that have testable business logic.
+Rank them by complexity and tell me which ones would benefit most from
+unit tests. Skip simple CRUD or pass-through services.
+```
+
+**Generate tests for a single file:**
+
+```text
+Read web/modules/custom/my_module/src/Service/PriceCalculator.php. Write a
+PHPUnit unit test for this file. Mock all constructor dependencies. Test
+every public method with normal input, edge cases, and expected failures.
+Put the test at web/modules/custom/my_module/tests/src/Unit/Service/PriceCalculatorTest.php.
+```
+
+**Generate tests for a specific service:**
+
+```text
+Read web/modules/custom/my_module/src/Service/MyService.php and generate
+PHPUnit unit tests for it. The test should:
+- Extend Drupal\Tests\UnitTestCase
+- Live at web/modules/custom/my_module/tests/src/Unit/Service/MyServiceTest.php
+- Mock all injected dependencies
+- Test each public method including edge cases
+- Follow Drupal coding standards
+```
+
+**Generate tests for a single module:**
+
+```text
+Read everything in web/modules/custom/my_module/. Understand what the module
+does, then write unit tests for every service and plugin that has real logic.
+Put tests in web/modules/custom/my_module/tests/src/Unit/ with the correct
+namespaces. Skip anything that's just glue code with no logic to test.
+```
+
+**Generate tests for all modules:**
+
+```text
+Read all custom modules in web/modules/custom/. For each module, generate
+unit tests for every service and plugin that has logic worth testing. Put
+each test in the correct namespace under that module's tests/src/Unit/.
+Mock dependencies using PHPUnit mock builder or Prophecy. Skip classes
+that are just wiring (empty constructors, single-line delegation).
+```
+
+**Generate tests based on existing patterns:**
+
+```text
+Look at the existing unit tests in web/modules/custom/ to understand the
+testing patterns and style used in this project. Then find custom modules
+that don't have tests yet and generate tests that follow the same patterns.
+```
+
+**Generate Behat features from manual QA steps:**
+
+```text
+I manually test this site by doing the following:
+1. Log in as an admin
+2. Go to /admin/commerce/orders and verify the page loads
+3. Create a test order and verify it appears in the list
+4. Log out and verify I can't access /admin
+
+Convert these manual steps into Behat .feature files using Gherkin syntax.
+Use step definitions from drupal/drupal-extension and drevops/behat-steps.
+Put the files in tests/behat/features/.
+```
+
+**Audit existing test coverage:**
+
+```text
+Compare the custom modules in web/modules/custom/ against the test files
+in each module's tests/ directory. Give me a coverage report showing:
+- Modules with no tests at all
+- Services/plugins that exist but have no corresponding test
+- Test files that exist but may be outdated (testing methods that no longer exist)
+```
+
+## Debugging CI Failures
+
+**AI prompt when a workflow fails:**
+
+```text
+My GitHub Actions PR check failed. Here's the error output:
+
+[paste the failed step output here]
+
+Tell me what went wrong, how to fix it, and whether this is a real issue
+in my code or a config problem with drupal-qa. If it's a drupal-qa problem,
+I'll report it at https://github.com/DanePete/drupal-qa/issues
+```
+
+**AI prompt to add missing Behat steps:**
+
+```text
+My Behat test failed with "step not defined" errors. Here are the undefined steps:
+
+[paste the undefined step errors here]
+
+Tell me which drevops/behat-steps trait I need to add to my FeatureContext,
+or write a custom step definition if no existing trait covers it.
+```
+
+---
+
+## Reference
+
+Everything below is reference material for manual setup, customization, and troubleshooting.
+
+## Prerequisites
+
+- A Drupal 10+ project using Composer
+- A Pantheon hosting account (for deploy/multidev workflows)
+- A GitHub repository
+- PHP 8.2+
+
 ## Installation
 
 ```bash
@@ -94,6 +274,8 @@ Run `composer install` — the following files will be scaffolded to your projec
 - `phpstan.neon.dist` — PHPStan level 1, scans `web/modules/custom/` and `web/themes/`
 - `grumphp.yml.dist` — pre-commit hooks (debug function blacklist, PHPCS, PHPStan)
 - `behat.yml.dist` — Behat config with `BEHAT_BASE_URL` env var support
+- `.github/copilot-instructions.md` — Drupal-specific AI review instructions
+- `CLAUDE.md` — Drupal coding instructions for Claude Code
 
 Add the scaffolded `.dist` files to your `.gitignore` — they're regenerated on every `composer install`:
 
@@ -133,10 +315,6 @@ All pulled in automatically:
 - `content_pages.feature` — homepage loads, 404 works
 - `cart.feature` (commerce) — cart page, empty cart message
 - `catalog.feature` (commerce) — product listing loads
-
-### Reusable GitHub Actions Workflows
-
-Located in `.github/workflows/`. These use `workflow_call` so your project references them with ~10 lines each.
 
 ## GitHub Actions Setup
 
@@ -235,43 +413,6 @@ Or via Terminus:
 
 ```bash
 terminus site:info my-site-name --field=id
-```
-
-## Gradual Adoption
-
-When you first install this on an existing project, you'll likely have PHPCS and PHPStan violations. The `phpcs_required` and `phpstan_required` flags let you adopt gradually:
-
-```yaml
-# Day 1: report violations but don't block anything
-phpcs_required: false
-phpstan_required: false
-
-# After cleaning up PHPCS violations: start enforcing
-phpcs_required: true
-phpstan_required: false
-
-# After cleaning up PHPStan violations: full enforcement
-phpcs_required: true
-phpstan_required: true
-```
-
-When set to `false`, violations show as warnings in the PR checks but won't block the merge.
-
-To change these, just edit the value in your `.github/workflows/pr-checks.yml` (and `deploy-pantheon.yml` if you have one) and commit. It's one line.
-
-**AI prompt to clean up violations:**
-
-```text
-Run `./vendor/bin/phpcs --standard=Drupal --extensions=php,module,inc,install,theme
-web/modules/custom/` and fix every violation. Group fixes into logical commits
-(one per module or one per violation type). Don't change any logic — only
-formatting, spacing, docblocks, and naming conventions.
-```
-
-```text
-Run `./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress` and
-fix every error. For each fix, explain what was wrong and why the fix is correct.
-Don't suppress errors with @phpstan-ignore unless there's genuinely no other option.
 ```
 
 ## Workflow Inputs
@@ -438,91 +579,6 @@ class PriceCalculatorTest extends UnitTestCase {
 
 No config changes needed. The wildcard in `phpunit.xml.dist` picks it up.
 
-### Using AI to Generate Unit Tests
-
-These prompts work with any AI coding tool that can read your codebase (Claude Code, Cursor, Copilot, Windsurf, etc.).
-
-**Find what to test:**
-
-```text
-Look at my custom modules in web/modules/custom/. For each module, identify
-services, plugins, and utility classes that have testable business logic.
-Rank them by complexity and tell me which ones would benefit most from
-unit tests. Skip simple CRUD or pass-through services.
-```
-
-**Generate tests for a single file:**
-
-```text
-Read web/modules/custom/my_module/src/Service/PriceCalculator.php. Write a
-PHPUnit unit test for this file. Mock all constructor dependencies. Test
-every public method with normal input, edge cases, and expected failures.
-Put the test at web/modules/custom/my_module/tests/src/Unit/Service/PriceCalculatorTest.php.
-```
-
-**Generate tests for a specific service:**
-
-```text
-Read web/modules/custom/my_module/src/Service/MyService.php and generate
-PHPUnit unit tests for it. The test should:
-- Extend Drupal\Tests\UnitTestCase
-- Live at web/modules/custom/my_module/tests/src/Unit/Service/MyServiceTest.php
-- Mock all injected dependencies
-- Test each public method including edge cases
-- Follow Drupal coding standards
-```
-
-**Generate tests for a single module:**
-
-```text
-Read everything in web/modules/custom/my_module/. Understand what the module
-does, then write unit tests for every service and plugin that has real logic.
-Put tests in web/modules/custom/my_module/tests/src/Unit/ with the correct
-namespaces. Skip anything that's just glue code with no logic to test.
-```
-
-**Generate tests for all services across all modules:**
-
-```text
-Read all custom modules in web/modules/custom/. For each module, generate
-unit tests for every service and plugin that has logic worth testing. Put
-each test in the correct namespace under that module's tests/src/Unit/.
-Mock dependencies using PHPUnit mock builder or Prophecy. Skip classes
-that are just wiring (empty constructors, single-line delegation).
-```
-
-**Generate tests based on existing patterns:**
-
-```text
-Look at the existing unit tests in web/modules/custom/ to understand the
-testing patterns and style used in this project. Then find custom modules
-that don't have tests yet and generate tests that follow the same patterns.
-```
-
-**Generate Behat features from manual QA steps:**
-
-```text
-I manually test this site by doing the following:
-1. Log in as an admin
-2. Go to /admin/commerce/orders and verify the page loads
-3. Create a test order and verify it appears in the list
-4. Log out and verify I can't access /admin
-
-Convert these manual steps into Behat .feature files using Gherkin syntax.
-Use step definitions from drupal/drupal-extension and drevops/behat-steps.
-Put the files in tests/behat/features/.
-```
-
-**Audit existing test coverage:**
-
-```text
-Compare the custom modules in web/modules/custom/ against the test files
-in each module's tests/ directory. Give me a coverage report showing:
-- Modules with no tests at all
-- Services/plugins that exist but have no corresponding test
-- Test files that exist but may be outdated (testing methods that no longer exist)
-```
-
 ### Behat
 
 Add `.feature` files in `tests/behat/features/` — they run alongside the package features.
@@ -629,45 +685,6 @@ composer update thronedigital/drupal-qa
 ```
 
 Scaffolded `.dist` files will be refreshed. Your custom overrides (files without `.dist`) won't be touched.
-
-## AI PR Reviews
-
-The package scaffolds a `.github/copilot-instructions.md` that tells GitHub Copilot how to review PRs for this project:
-
-- Deprecated Drupal API usage
-- Security issues (XSS, SQL injection, missing access checks)
-- `\Drupal::` static calls that should use dependency injection
-- Debug code left behind (ksm, kint, var_dump)
-- Performance issues (entity loads in loops, missing caching)
-- Missing config schema, missing services.yml entries
-- Hardcoded credentials or API keys
-
-This is **optional** and requires a GitHub Copilot Business or Enterprise subscription. To enable: go to your repo's **Settings > Copilot > Code review** and turn it on. Then assign `@copilot` as a reviewer on any PR, or set up a ruleset to do it automatically. The instructions file works automatically once Copilot code review is enabled — no extra setup needed.
-
-## Debugging CI Failures
-
-**AI prompt when a workflow fails:**
-
-```text
-My GitHub Actions PR check failed. Here's the error output:
-
-[paste the failed step output here]
-
-Tell me what went wrong, how to fix it, and whether this is a real issue
-in my code or a config problem with drupal-qa. If it's a drupal-qa problem,
-I'll report it at https://github.com/DanePete/drupal-qa/issues
-```
-
-**AI prompt to add missing Behat steps:**
-
-```text
-My Behat test failed with "step not defined" errors. Here are the undefined steps:
-
-[paste the undefined step errors here]
-
-Tell me which drevops/behat-steps trait I need to add to my FeatureContext,
-or write a custom step definition if no existing trait covers it.
-```
 
 ## Troubleshooting
 

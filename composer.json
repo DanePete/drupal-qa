@@ -37,7 +37,8 @@
                 "[project-root]/phpstan.neon.dist": "config/phpstan.neon.dist",
                 "[project-root]/grumphp.yml.dist": "config/grumphp.yml.dist",
                 "[project-root]/behat.yml.dist": "config/behat.yml.dist",
-                "[project-root]/.github/copilot-instructions.md": "scaffold/github/copilot-instructions.md"
+                "[project-root]/.github/copilot-instructions.md": "scaffold/github/copilot-instructions.md",
+                "[project-root]/CLAUDE.md": "CLAUDE.md"
             }
         },
         "grumphp": {
