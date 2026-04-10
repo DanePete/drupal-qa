@@ -584,7 +584,7 @@ composer update thronedigital/drupal-qa
 
 Scaffolded `.dist` files will be refreshed. Your custom overrides (files without `.dist`) won't be touched.
 
-## Copilot PR Reviews
+## AI PR Reviews
 
 The package scaffolds a `.github/copilot-instructions.md` that tells GitHub Copilot how to review PRs for this project:
 
