@@ -16,16 +16,65 @@ if [ ! -f "composer.json" ]; then
   exit 1
 fi
 
-# Gather project info
-read -rp "Pantheon site machine name (e.g. my-site): " SITE_NAME
-echo ""
-echo "  Your site UUID is in the Pantheon dashboard URL:"
-echo "  https://dashboard.pantheon.io/workspace/.../cms-site/{SITE-UUID}/environment/..."
-echo "  Or run: terminus site:info YOUR_SITE --field=id"
-echo ""
-read -rp "Pantheon site UUID: " SITE_ID
-read -rp "PHP version [8.3]: " PHP_VERSION
-PHP_VERSION=${PHP_VERSION:-8.3}
+# Auto-detect from DDEV config if available
+DETECTED_SITE=""
+DETECTED_PHP=""
+DETECTED_UUID=""
+
+if [ -f ".ddev/config.yaml" ]; then
+  echo "Found .ddev/config.yaml — auto-detecting project info..."
+  echo ""
+
+  # Site name from PANTHEON_SITE env var or ddev project name
+  DETECTED_SITE=$(grep 'PANTHEON_SITE=' .ddev/config.yaml 2>/dev/null | head -1 | sed 's/.*PANTHEON_SITE=//' | tr -d '[:space:]' | tr -d '"' | tr -d "'" )
+  if [ -z "$DETECTED_SITE" ]; then
+    DETECTED_SITE=$(grep '^name:' .ddev/config.yaml 2>/dev/null | head -1 | awk '{print $2}')
+  fi
+
+  # PHP version
+  DETECTED_PHP=$(grep '^php_version:' .ddev/config.yaml 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"')
+
+  # Try to get UUID from existing deploy workflow
+  if [ -f ".github/workflows/deploy-pantheon.yml" ]; then
+    DETECTED_UUID=$(grep 'pantheon_site_id:' .github/workflows/deploy-pantheon.yml 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
+  fi
+  # Try multidev workflow too
+  if [ -z "$DETECTED_UUID" ] && [ -f ".github/workflows/multidev.yml" ]; then
+    DETECTED_UUID=$(grep 'pantheon_site_id:' .github/workflows/multidev.yml 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
+  fi
+  # Try to get UUID via Terminus if available
+  if [ -z "$DETECTED_UUID" ] && [ -n "$DETECTED_SITE" ] && command -v terminus &>/dev/null; then
+    DETECTED_UUID=$(terminus site:info "$DETECTED_SITE" --field=id 2>/dev/null || true)
+  fi
+fi
+
+# Gather project info (pre-fill with detected values)
+if [ -n "$DETECTED_SITE" ]; then
+  read -rp "Pantheon site machine name [$DETECTED_SITE]: " SITE_NAME
+  SITE_NAME=${SITE_NAME:-$DETECTED_SITE}
+else
+  read -rp "Pantheon site machine name (e.g. my-site): " SITE_NAME
+fi
+
+if [ -n "$DETECTED_UUID" ]; then
+  read -rp "Pantheon site UUID [$DETECTED_UUID]: " SITE_ID
+  SITE_ID=${SITE_ID:-$DETECTED_UUID}
+else
+  echo ""
+  echo "  Your site UUID is in the Pantheon dashboard URL:"
+  echo "  https://dashboard.pantheon.io/workspace/.../cms-site/{SITE-UUID}/environment/..."
+  echo "  Or run: terminus site:info YOUR_SITE --field=id"
+  echo ""
+  read -rp "Pantheon site UUID: " SITE_ID
+fi
+
+if [ -n "$DETECTED_PHP" ]; then
+  read -rp "PHP version [$DETECTED_PHP]: " PHP_VERSION
+  PHP_VERSION=${PHP_VERSION:-$DETECTED_PHP}
+else
+  read -rp "PHP version [8.3]: " PHP_VERSION
+  PHP_VERSION=${PHP_VERSION:-8.3}
+fi
 
 read -rp "Should PHPCS failures block PRs? (y/n) [y]: " PHPCS_REQ
 PHPCS_REQ=${PHPCS_REQ:-y}
