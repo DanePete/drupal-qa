@@ -809,7 +809,7 @@ This package makes choices so you don't have to. Here's what we chose and why:
 
 **PHPStan level 1 by default.** Most existing Drupal projects can't pass level 5 without weeks of cleanup. Level 1 gives you real value (undefined variables, unknown classes) without drowning you in noise. The setup script lets you pick a higher level, and the AI prompts help you level up incrementally.
 
-**PHPCS and PHPStan don't block PRs by default on deploy.** PHPStan uses `continue-on-error` and PHPCS can be toggled with `phpcs_required: false`. The goal is to let teams adopt gradually — see violations, fix them over time, then flip the switch when ready.
+**Gradual adoption, not all-or-nothing.** Most teams can't drop this into a legacy project and have everything pass on day one. That's why `phpcs_required` and `phpstan_required` default to `false` — violations show up as warnings in your PR so the team can see them, but nothing blocks. Fix them at your own pace. When you're ready, flip one flag to `true` and that check starts enforcing. No big-bang cleanup required.
 
 **Behat over Nightwatch.** Behat with `drupal/drupal-extension` speaks Drupal natively — it knows about roles, users, regions, and content types. Nightwatch is a better general-purpose browser testing tool, but for Drupal-specific smoke tests, Behat gets you further with less code.
 
