@@ -326,15 +326,65 @@ web/modules/custom/my_module/tests/src/Unit/MyServiceTest.php
 ```php
 <?php
 
-namespace Drupal\Tests\my_module\Unit;
+namespace Drupal\Tests\my_module\Unit\Service;
 
+use Drupal\my_module\Service\PriceCalculator;
 use Drupal\Tests\UnitTestCase;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 
-class MyServiceTest extends UnitTestCase {
+/**
+ * @coversDefaultClass \Drupal\my_module\Service\PriceCalculator
+ * @group my_module
+ */
+class PriceCalculatorTest extends UnitTestCase {
 
-  public function testMyThing(): void {
-    // Your project-specific test.
-    $this->assertTrue(TRUE);
+  /**
+   * The service under test.
+   */
+  protected PriceCalculator $calculator;
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    // Mock the config factory to return a tax rate.
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')
+      ->with('tax_rate')
+      ->willReturn(0.08);
+
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('my_module.settings')
+      ->willReturn($config);
+
+    $this->calculator = new PriceCalculator($configFactory);
+  }
+
+  /**
+   * Tests price calculation with tax.
+   */
+  public function testCalculateWithTax(): void {
+    $result = $this->calculator->calculateTotal(100.00);
+    $this->assertEquals(108.00, $result);
+  }
+
+  /**
+   * Tests that zero price returns zero.
+   */
+  public function testZeroPriceReturnsZero(): void {
+    $this->assertEquals(0.00, $this->calculator->calculateTotal(0));
+  }
+
+  /**
+   * Tests that negative prices throw an exception.
+   */
+  public function testNegativePriceThrowsException(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->calculator->calculateTotal(-50.00);
   }
 
 }
