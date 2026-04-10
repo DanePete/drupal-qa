@@ -164,6 +164,8 @@ jobs:
 
       - name: Push to Pantheon
         run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
           git remote add pantheon ssh://codeserver.dev.${{ inputs.pantheon_site_id }}@codeserver.dev.${{ inputs.pantheon_site_id }}.drush.in:2222/~/repository.git
           git push pantheon HEAD:master
 
