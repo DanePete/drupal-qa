@@ -200,6 +200,108 @@ Use step definitions from drupal/drupal-extension and drevops/behat-steps.
 Put the files in tests/behat/features/.
 ```
 
+**Write Kernel tests for database-dependent code:**
+
+```text
+Read web/modules/custom/my_module/src/Service/OrderLookupService.php. This
+service queries the database so it needs a Kernel test, not a Unit test.
+Write a KernelTestBase test that:
+- Extends Drupal\Tests\my_module\Kernel\MyModuleKernelTestBase (or Drupal\KernelTests\KernelTestBase)
+- Lives at web/modules/custom/my_module/tests/src/Kernel/Service/OrderLookupServiceTest.php
+- Enables required modules in $modules
+- Creates test entities in setUp()
+- Tests the actual queries return correct results
+```
+
+**Test Drupal plugins (blocks, conditions, field formatters):**
+
+```text
+Read web/modules/custom/my_module/src/Plugin/. For each plugin, write a
+unit test that:
+- Verifies the plugin annotation/attribute has all required properties
+- Tests the build/evaluate/viewElements method with mocked dependencies
+- Tests access control if the plugin has it
+- Tests configuration form defaults
+Put tests at web/modules/custom/my_module/tests/src/Unit/Plugin/
+```
+
+**Test event subscribers:**
+
+```text
+Read web/modules/custom/my_module/src/EventSubscriber/. For each subscriber:
+- Test that getSubscribedEvents() returns the correct event mappings
+- Test each handler method with a mocked event object
+- Test that the subscriber modifies the event correctly
+- Test edge cases (empty data, missing fields, etc.)
+```
+
+**Test form validation logic:**
+
+```text
+Read the custom forms in web/modules/custom/my_module/src/Form/. For each
+form that has validation logic in validateForm(), write tests that:
+- Submit valid data and verify no errors
+- Submit invalid data and verify the correct error messages
+- Test boundary values and edge cases
+- Mock any services the form injects
+```
+
+**Test access control:**
+
+```text
+Read all custom routes in web/modules/custom/my_module/my_module.routing.yml
+and the corresponding access check classes. Write tests that verify:
+- Anonymous users are denied where expected
+- Authenticated users with correct permissions are allowed
+- Users without the right role/permission are denied
+- Custom access checkers return the correct AccessResult
+```
+
+**Test migration plugins:**
+
+```text
+Read web/modules/custom/my_module/src/Plugin/migrate/. For each process
+plugin, write a unit test that:
+- Tests transform() with normal input
+- Tests transform() with empty/null input
+- Tests transform() with malformed input
+- Verifies MigrateSkipRowException is thrown when appropriate
+```
+
+**Generate tests for REST/API endpoints:**
+
+```text
+Read the custom REST resources or controllers in web/modules/custom/my_module/.
+Write tests that verify:
+- Correct response codes (200, 403, 404, 422)
+- Response body structure matches expected schema
+- Authentication/authorization is enforced
+- Invalid input returns proper error responses
+```
+
+**Test cron and queue workers:**
+
+```text
+Read web/modules/custom/my_module/src/Plugin/QueueWorker/. For each worker:
+- Test processItem() with valid data
+- Test processItem() with invalid data (should it throw or skip?)
+- Test that RequeueException is thrown when appropriate
+- Mock any external services the worker calls
+Also check hook_cron implementations in my_module.module and test them.
+```
+
+**Security-focused test generation:**
+
+```text
+Read all custom modules in web/modules/custom/. For each module, write tests
+focused specifically on security:
+- Test that all forms sanitize input properly
+- Test that SQL queries use parameterized placeholders (no string concat)
+- Test that routes return 403 for unauthorized users
+- Test that any user-facing output is escaped
+- Test that file upload handlers validate extensions and MIME types
+```
+
 **Audit existing test coverage:**
 
 ```text
