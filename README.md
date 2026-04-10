@@ -26,7 +26,8 @@ Reusable CI/QA toolchain for Drupal 10+ projects. One `composer require` gives y
 
 ## What You Get
 
-- **Automated PR checks** — PHPCS, PHPStan, YAML lint, security audit, secret scanning, PHPUnit on every pull request
+- **Automated PR checks** — PHPCS, PHPStan, YAML lint, security audit, PHPUnit on every pull request
+- **Secret scanning** — Gitleaks scans every PR for accidentally committed API keys, passwords, tokens, and credentials before they reach production
 - **Preview environments** — Pantheon multidev created automatically for each PR
 - **Smoke tests** — Behat tests verify login, access control, homepage, and commerce flows
 - **Pre-commit hooks** — GrumPHP catches debug code and coding violations before you push
