@@ -1,0 +1,14 @@
+review:
+  instructions:
+    - "This is a Drupal 10+ project deploying to Pantheon."
+    - "Check for Drupal coding standards violations (drupal.org/docs/develop/standards)."
+    - "Flag any use of deprecated Drupal APIs — suggest the modern replacement."
+    - "Look for security issues: unsanitized user input, raw SQL queries, missing access checks on routes, XSS via unescaped output in Twig (use {{ variable }} not {{ variable|raw }} unless intentional)."
+    - "Flag services that use \\Drupal:: static calls instead of dependency injection."
+    - "Check that new routes have proper access controls (_permission, _role, or _custom_access)."
+    - "Flag any debug code left behind: ksm(), kint(), dpm(), var_dump(), print_r(), phpinfo()."
+    - "Check for performance issues: entity loads inside loops, missing caching, N+1 query patterns, loading full entities when only an ID is needed."
+    - "Verify that new or changed config has corresponding config schema YAML."
+    - "If new services are added, verify they are registered in the module's services.yml."
+    - "Check that PHPDoc blocks exist on public methods and match the actual parameters/return types."
+    - "Flag any hardcoded URLs, credentials, or API keys."

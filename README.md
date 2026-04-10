@@ -584,6 +584,20 @@ composer update thronedigital/drupal-qa
 
 Scaffolded `.dist` files will be refreshed. Your custom overrides (files without `.dist`) won't be touched.
 
+## Copilot PR Reviews
+
+The package scaffolds a `.github/.copilot-review-config.yml` that tells GitHub Copilot to review PRs with Drupal-specific checks:
+
+- Deprecated Drupal API usage
+- Security issues (XSS, SQL injection, missing access checks)
+- `\Drupal::` static calls that should use dependency injection
+- Debug code left behind (ksm, kint, var_dump)
+- Performance issues (entity loads in loops, missing caching)
+- Missing config schema, missing services.yml entries
+- Hardcoded credentials or API keys
+
+To enable: go to your repo's **Settings > Copilot > Code review** and turn it on. Then assign `@copilot` as a reviewer on any PR, or set up a ruleset to do it automatically.
+
 ## Debugging CI Failures
 
 **AI prompt when a workflow fails:**
