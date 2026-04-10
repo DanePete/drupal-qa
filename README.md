@@ -402,9 +402,6 @@ Scaffolded `.dist` files will be refreshed. Your custom overrides (files without
 
 ## Troubleshooting
 
-**"Workflow not found" or "workflow_call" errors:**
-The `DanePete/drupal-qa` repo must be public for other repos to use its workflows. If someone accidentally set it to private, change it back under Settings > General > Danger Zone > Change visibility.
-
 **GrumPHP conflicts with existing config:**
 If your project already has a `grumphp.yml`, it takes precedence over `grumphp.yml.dist`. Either update your existing config or delete it to use the scaffolded defaults.
 
