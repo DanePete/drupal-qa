@@ -113,6 +113,12 @@ jobs:
         run: composer audit || echo "::warning::Security vulnerabilities found - review before promoting to live"
         continue-on-error: true
 
+      - name: Gitleaks - Secret Scanning
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
   phpunit:
     name: PHPUnit Tests
     runs-on: ubuntu-latest
