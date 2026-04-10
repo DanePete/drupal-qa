@@ -32,8 +32,18 @@ PHPCS_REQ=${PHPCS_REQ:-y}
 if [[ "$PHPCS_REQ" =~ ^[Yy] ]]; then PHPCS_REQUIRED="true"; else PHPCS_REQUIRED="false"; fi
 
 echo ""
-echo "  PHPStan levels: 1 = lenient (good for starting out), 5 = moderate, 9 = strictest"
-read -rp "PHPStan level [1]: " PHPSTAN_LEVEL
+echo "  PHPStan analysis levels:"
+echo "    1 - Basic checks (undefined variables, unknown classes). Start here."
+echo "    3 - Adds return type checks and phpdoc validation."
+echo "    5 - The sweet spot. Catches wrong method calls, bad argument types,"
+echo "        hallucinated functions, and most real bugs. If you can get here"
+echo "        you're in great shape."
+echo "    7 - Strict union types and nullability. Expect a lot of noise on"
+echo "        legacy code."
+echo "    9 - Maximum strictness. Everything must be typed. No mixed types"
+echo "        anywhere. Probably overkill for most Drupal projects."
+echo ""
+read -rp "PHPStan level (1-9) [1]: " PHPSTAN_LEVEL
 PHPSTAN_LEVEL=${PHPSTAN_LEVEL:-1}
 
 read -rp "Should PHPStan failures block PRs? (y/n) [n]: " PHPSTAN_REQ

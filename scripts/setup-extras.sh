@@ -29,7 +29,7 @@ echo "Select which extras to enable:"
 echo ""
 
 # PHPStan higher level
-read -rp "1. PHPStan level 5+ (catches hallucinated methods, wrong types, bad API usage)? (y/n) [n]: " OPT_PHPSTAN_STRICT
+read -rp "1. Bump PHPStan to level 5 (the sweet spot — catches wrong method calls, bad types, most real bugs)? (y/n) [n]: " OPT_PHPSTAN_STRICT
 OPT_PHPSTAN_STRICT=${OPT_PHPSTAN_STRICT:-n}
 if [[ "$OPT_PHPSTAN_STRICT" =~ ^[Yy] ]]; then
   EXTRAS_SELECTED+=("phpstan-strict")
