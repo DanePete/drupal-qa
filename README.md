@@ -643,7 +643,8 @@ My GitHub Actions PR check failed. Here's the error output:
 [paste the failed step output here]
 
 Tell me what went wrong, how to fix it, and whether this is a real issue
-or a config problem with drupal-qa.
+in my code or a config problem with drupal-qa. If it's a drupal-qa problem,
+I'll report it at https://github.com/DanePete/drupal-qa/issues
 ```
 
 **AI prompt to add missing Behat steps:**
