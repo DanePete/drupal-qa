@@ -255,6 +255,8 @@ phpstan_required: true
 
 When set to `false`, violations show as warnings in the PR checks but won't block the merge.
 
+To change these, just edit the value in your `.github/workflows/pr-checks.yml` (and `deploy-pantheon.yml` if you have one) and commit. It's one line.
+
 **AI prompt to clean up violations:**
 
 ```text
