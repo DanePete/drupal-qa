@@ -8,7 +8,7 @@ Reusable CI/QA toolchain for Drupal projects. One `composer require` gives you P
 - A Pantheon hosting account (for deploy/multidev workflows)
 - A GitHub repository
 - PHP 8.2+
-- This repo must remain **public** — GitHub requires reusable workflow repos to be public for cross-org `workflow_call`
+- The `DanePete/drupal-qa` repo must stay **public** — otherwise other repos can't use its shared workflows
 
 ## Quick Setup
 
