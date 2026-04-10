@@ -255,6 +255,21 @@ phpstan_required: true
 
 When set to `false`, violations show as warnings in the PR checks but won't block the merge.
 
+**AI prompt to clean up violations:**
+
+```text
+Run `./vendor/bin/phpcs --standard=Drupal --extensions=php,module,inc,install,theme
+web/modules/custom/` and fix every violation. Group fixes into logical commits
+(one per module or one per violation type). Don't change any logic — only
+formatting, spacing, docblocks, and naming conventions.
+```
+
+```text
+Run `./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress` and
+fix every error. For each fix, explain what was wrong and why the fix is correct.
+Don't suppress errors with @phpstan-ignore unless there's genuinely no other option.
+```
+
 ## Workflow Inputs
 
 ### pr-checks.yml
@@ -435,6 +450,18 @@ To skip commerce tests, override `behat.yml.dist` with your own `behat.yml` that
 
 ## Customizing Configs
 
+**AI prompt to tailor configs to your project:**
+
+```text
+Look at my project structure — custom modules in web/modules/custom/, themes
+in web/themes/. Read the scaffolded phpstan.neon.dist, phpunit.xml.dist,
+grumphp.yml.dist, and behat.yml.dist. Create customized versions (without
+.dist) that are tuned to this specific project. For example:
+- Add any extra theme paths to PHPCS scanning
+- Add region_map entries to behat.yml that match my actual theme regions
+- Adjust PHPStan ignored errors if needed for my specific contrib modules
+```
+
 If you need to override a scaffolded config, copy it and remove the `.dist` extension:
 
 ```bash
@@ -466,6 +493,30 @@ composer update thronedigital/drupal-qa
 ```
 
 Scaffolded `.dist` files will be refreshed. Your custom overrides (files without `.dist`) won't be touched.
+
+## Debugging CI Failures
+
+**AI prompt when a workflow fails:**
+
+```text
+My GitHub Actions PR check failed. Here's the error output:
+
+[paste the failed step output here]
+
+Tell me what went wrong, how to fix it, and whether this is a real issue
+or a config problem with drupal-qa.
+```
+
+**AI prompt to add missing Behat steps:**
+
+```text
+My Behat test failed with "step not defined" errors. Here are the undefined steps:
+
+[paste the undefined step errors here]
+
+Tell me which drevops/behat-steps trait I need to add to my FeatureContext,
+or write a custom step definition if no existing trait covers it.
+```
 
 ## Troubleshooting
 
