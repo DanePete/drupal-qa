@@ -2,13 +2,62 @@
 
 Reusable CI/QA toolchain for Drupal projects. One `composer require` gives you PHPUnit, PHPCS, PHPStan, Behat, and GrumPHP with sensible defaults, generic smoke tests, and reusable GitHub Actions workflows for Pantheon.
 
+## Quick Setup
+
+### Option A: Interactive Setup Script
+
+Run this from your Drupal project root:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/DanePete/drupal-qa/main/scripts/setup.sh)
+```
+
+The script asks for your Pantheon site name, site UUID, and preferences, then generates all workflow files, a FeatureContext, and tells you what to do next.
+
+### Option B: AI Prompt
+
+Copy this prompt into Claude, ChatGPT, or any AI assistant:
+
+```text
+I'm setting up a Drupal project that deploys to Pantheon. I need you to generate
+the GitHub Actions workflow files and composer.json changes to use the
+thronedigital/drupal-qa package.
+
+Here's my project info:
+- Pantheon site machine name: [YOUR_SITE_NAME]
+- Pantheon site UUID: [YOUR_SITE_UUID]
+- PHP version: [8.3]
+- PHPCS should block PRs: [yes/no]
+- PHPStan should block PRs: [yes/no]
+- Custom theme paths to scan: [e.g. web/themes/custom/]
+- Has Drupal Commerce: [yes/no]
+- Run Behat tests on multidev: [yes/no]
+
+Generate the following files:
+
+1. `.github/workflows/pr-checks.yml` — calls DanePete/drupal-qa pr-checks workflow
+2. `.github/workflows/deploy-pantheon.yml` — calls DanePete/drupal-qa deploy workflow
+3. `.github/workflows/multidev.yml` — calls DanePete/drupal-qa multidev workflow
+4. `.github/workflows/multidev-cleanup.yml` — calls DanePete/drupal-qa cleanup workflow
+5. `tests/behat/bootstrap/FeatureContext.php` — extends DrupalQa base context
+6. Show me the composer.json changes needed (add thronedigital/drupal-qa to
+   require-dev and allowed-packages)
+
+Reference the workflow inputs documented at:
+https://github.com/DanePete/drupal-qa#workflow-inputs
+```
+
+### Option C: Manual Setup
+
+See [Installation](#installation) and [GitHub Actions Setup](#github-actions-setup) below.
+
 ## Installation
 
 ```bash
 composer require --dev thronedigital/drupal-qa
 ```
 
-Add the package to your `allowed-packages` in `composer.json` so the scaffold plugin copies config files:
+Add the package to your `allowed-packages` in `composer.json`:
 
 ```json
 {
@@ -61,55 +110,7 @@ All pulled in automatically:
 
 ### Reusable GitHub Actions Workflows
 
-Located in `scaffold/github/workflows/`. These use `workflow_call` so your project references them with ~10 lines each.
-
-## Adding Project-Specific Tests
-
-### PHPUnit
-
-Create tests in your custom modules — they're auto-discovered:
-
-```
-web/modules/custom/my_module/tests/src/Unit/MyServiceTest.php
-```
-
-```php
-<?php
-
-namespace Drupal\Tests\my_module\Unit;
-
-use Drupal\Tests\UnitTestCase;
-
-class MyServiceTest extends UnitTestCase {
-
-  public function testMyThing(): void {
-    // Your project-specific test.
-    $this->assertTrue(TRUE);
-  }
-
-}
-```
-
-No config changes needed. The wildcard in `phpunit.xml.dist` picks it up.
-
-### Behat
-
-Add `.feature` files in `tests/behat/features/` — they run alongside the package features.
-
-Create a `FeatureContext` that extends the base:
-
-```php
-<?php
-
-use DrupalQa\Behat\FeatureContext as BaseFeatureContext;
-use DrevOps\BehatSteps\Drupal\ContentTrait;
-use DrevOps\BehatSteps\Drupal\UserTrait;
-
-class FeatureContext extends BaseFeatureContext {
-  use ContentTrait;
-  use UserTrait;
-}
-```
+Located in `.github/workflows/`. These use `workflow_call` so your project references them with ~10 lines each.
 
 ## GitHub Actions Setup
 
@@ -125,7 +126,7 @@ on:
     types: [opened, synchronize, reopened]
 jobs:
   checks:
-    uses: thronedigital/drupal-qa/.github/workflows/pr-checks.yml@v1
+    uses: DanePete/drupal-qa/.github/workflows/pr-checks.yml@v1
     with:
       phpcs_required: false    # set true when codebase is clean
       phpstan_required: false  # set true when codebase is clean
@@ -134,7 +135,7 @@ jobs:
 
 ### 2. Deploy to Pantheon
 
-Create `.github/workflows/deploy.yml`:
+Create `.github/workflows/deploy-pantheon.yml`:
 
 ```yaml
 name: Deploy
@@ -143,7 +144,7 @@ on:
     branches: [main]
 jobs:
   deploy:
-    uses: thronedigital/drupal-qa/.github/workflows/deploy-pantheon.yml@v1
+    uses: DanePete/drupal-qa/.github/workflows/deploy-pantheon.yml@v1
     with:
       pantheon_site: my-site-name
       pantheon_site_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -162,7 +163,7 @@ on:
     types: [opened, synchronize, reopened]
 jobs:
   multidev:
-    uses: thronedigital/drupal-qa/.github/workflows/multidev.yml@v1
+    uses: DanePete/drupal-qa/.github/workflows/multidev.yml@v1
     with:
       pantheon_site: my-site-name
       pantheon_site_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -181,7 +182,7 @@ on:
     types: [closed]
 jobs:
   cleanup:
-    uses: thronedigital/drupal-qa/.github/workflows/multidev-cleanup.yml@v1
+    uses: DanePete/drupal-qa/.github/workflows/multidev-cleanup.yml@v1
     with:
       pantheon_site: my-site-name
     secrets: inherit
@@ -225,56 +226,52 @@ Set these in your repo's Settings > Secrets:
 | `behat_tags` | string | `smoke` | Behat tag filter |
 | `source_env` | string | `live` | Environment to clone from |
 
-## Quick Setup
+## Adding Project-Specific Tests
 
-### Option A: Interactive Setup Script
+### PHPUnit
 
-Run this from your project root to generate all workflow files and update composer.json:
-
-```bash
-bash <(curl -s https://raw.githubusercontent.com/DanePete/drupal-qa/main/scripts/setup.sh)
-```
-
-Or download and run it manually:
-
-```bash
-curl -O https://raw.githubusercontent.com/DanePete/drupal-qa/main/scripts/setup.sh
-bash setup.sh
-```
-
-The script will ask for your Pantheon site name, site UUID, and preferences, then generate everything.
-
-### Option B: AI Prompt
-
-Give this prompt to Claude, ChatGPT, or any AI assistant to generate all needed files:
+Create tests in your custom modules — they're auto-discovered:
 
 ```text
-I'm setting up a Drupal project that deploys to Pantheon. I need you to generate
-the GitHub Actions workflow files and composer.json changes to use the
-thronedigital/drupal-qa package.
+web/modules/custom/my_module/tests/src/Unit/MyServiceTest.php
+```
 
-Here's my project info:
-- Pantheon site machine name: [YOUR_SITE_NAME]
-- Pantheon site UUID: [YOUR_SITE_UUID]
-- PHP version: [8.3]
-- PHPCS should block PRs: [yes/no]
-- PHPStan should block PRs: [yes/no]
-- Custom theme paths to scan: [e.g. web/themes/custom/]
-- Has Drupal Commerce: [yes/no]
-- Run Behat tests on multidev: [yes/no]
+```php
+<?php
 
-Generate the following files:
+namespace Drupal\Tests\my_module\Unit;
 
-1. `.github/workflows/pr-checks.yml` — calls DanePete/drupal-qa pr-checks workflow
-2. `.github/workflows/deploy-pantheon.yml` — calls DanePete/drupal-qa deploy workflow
-3. `.github/workflows/multidev.yml` — calls DanePete/drupal-qa multidev workflow
-4. `.github/workflows/multidev-cleanup.yml` — calls DanePete/drupal-qa cleanup workflow
-5. `tests/behat/bootstrap/FeatureContext.php` — extends DrupalQa base context
-6. Show me the composer.json changes needed (add thronedigital/drupal-qa to
-   require-dev and allowed-packages)
+use Drupal\Tests\UnitTestCase;
 
-Reference the workflow inputs documented at:
-https://github.com/DanePete/drupal-qa#workflow-inputs
+class MyServiceTest extends UnitTestCase {
+
+  public function testMyThing(): void {
+    // Your project-specific test.
+    $this->assertTrue(TRUE);
+  }
+
+}
+```
+
+No config changes needed. The wildcard in `phpunit.xml.dist` picks it up.
+
+### Behat
+
+Add `.feature` files in `tests/behat/features/` — they run alongside the package features.
+
+Create a `FeatureContext` that extends the base:
+
+```php
+<?php
+
+use DrupalQa\Behat\FeatureContext as BaseFeatureContext;
+use DrevOps\BehatSteps\Drupal\ContentTrait;
+use DrevOps\BehatSteps\Drupal\UserTrait;
+
+class FeatureContext extends BaseFeatureContext {
+  use ContentTrait;
+  use UserTrait;
+}
 ```
 
 ## Customizing Configs
