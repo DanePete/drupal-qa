@@ -125,7 +125,7 @@ jobs:
     needs: code-quality
     services:
       mariadb:
-        image: mariadb:10.4
+        image: mariadb:10.6
         env:
           MARIADB_ROOT_PASSWORD: root
           MARIADB_DATABASE: drupal_test
