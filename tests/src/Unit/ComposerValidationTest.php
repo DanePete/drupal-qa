@@ -60,10 +60,14 @@ class ComposerValidationTest extends TestCase {
     $debugPackages = ['kint-php/kint', 'symfony/var-dumper'];
     foreach ($debugPackages as $package) {
       if (isset($require[$package])) {
-        $this->addWarning(sprintf(
+        $message = sprintf(
           'Debug package "%s" is in require (not require-dev). Consider moving it to require-dev.',
           $package
-        ));
+        );
+        // Advisory, so it must not change the result. addWarning() is gone
+        // from PHPUnit 10 (an Error), and a PHPUnit warning of any kind fails
+        // a run under failOnWarning, so the note goes to stderr instead.
+        fwrite(STDERR, 'drupal-qa: ' . $message . PHP_EOL);
       }
     }
     // Always pass — this is advisory.
