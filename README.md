@@ -273,6 +273,9 @@ on:
 
 jobs:
   qa:
+    permissions:              # new repositories let workflows only read;
+      contents: read          # the results comment needs this write
+      pull-requests: write
     uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
     with:
       pantheon_site: my-site  # terminus site:list
@@ -284,8 +287,8 @@ jobs:
 **3. Add two secrets.** Both act as your Pantheon account, so add them only to
 repositories you trust.
 
-The token: Pantheon's avatar menu, **User settings**, **Personal Access Tokens**,
-**Add token**. Copy it; you see it once. It expires after 90 days.
+The token: open [your Pantheon user settings](https://dashboard.pantheon.io/personal-settings),
+choose **Personal Access Tokens**, then **Add token**. Copy it; you see it once. It expires after 90 days.
 
 ![Pantheon's Personal Access Tokens tab with Add token highlighted](docs/images/setup-pantheon-token.png)
 

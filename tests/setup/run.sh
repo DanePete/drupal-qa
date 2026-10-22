@@ -159,6 +159,8 @@ done_scenario() {
 # ─────────────────────────────────────────────────────────────────────────
 if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; watch the run"; then
   fixture "$FAKE_FIXTURE" 8.1.13 none > /dev/null
+  sed -i.bak 's/| Behat | ✅ passed |/| Behat | ⚠️ failed (warn only) |/' "$FAKE_COMMENT" && rm -f "$FAKE_COMMENT.bak"
+  export FAKE_BEHAT_FAILS=1
   mkdir -p "$T/empty" && cd "$T/empty" || exit 1
   drive "" '
     pick "Press Enter to start" "\r"
@@ -189,6 +191,7 @@ if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; w
     pick "Press Enter to continue" "\r"
   '
   rc=$?
+  unset FAKE_BEHAT_FAILS
   repo="$FAKE_GH/acme-org/acme-site.git"
   site="$HOME/pantheon-local-copies/acme-site"
   c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
@@ -211,6 +214,10 @@ if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; w
   c "added the key to Pantheon" test -s "$FAKE_STATE/key-added"
   c "opened the pull request" logged 'gh pr create -R acme-org/acme-site --base master --head chore/drupal-qa'
   c "opened the run in the browser" logged 'open https://github.com/acme-org/acme-site/actions/runs/4242'
+  c "counted the warnings instead of calling it a clean pass" said "passed, with 2 warning(s)"
+  c "named the Behat scenario that failed, and why" said 'was not found anywhere in the text'
+  c "linked the multidev" said "pr-7-acme-site.pantheonsite.io"
+  c "wrote the permission the results comment needs" shows "$repo" "$workflow" 'pull-requests: write'
   c "never printed the token" sh -c "! grep -q 'good-token' '$T/transcript'"
   c "never force-pushed" sh -c "! grep -q -- '--force' '$FAKE_LOG'"
   c "drew the job board's icons intact" has_bytes '\342\234\223\033\\[0m Plan' "$T/transcript"
@@ -233,6 +240,9 @@ on:
 
 jobs:
   qa:
+    permissions:
+      contents: read
+      pull-requests: write
     uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
     with:
       pantheon_site: acme-site
@@ -456,7 +466,7 @@ fi
 if scenario login "Terminus logged out: log in with a token, reuse it for the secret"; then
   fixture "$FAKE_FIXTURE" 8.3 none > /dev/null
   cd "$FAKE_FIXTURE" || exit 1
-  export FAKE_TERMINUS_LOGGED_OUT=1 FAKE_MULTIDEV=0
+  export FAKE_TERMINUS_LOGGED_OUT=1 FAKE_MULTIDEV=0 FAKE_COMMENT=/nonexistent
   drive "" '
     pick "Press Enter to start" "\r"
     pick "Paste the token" "good-token\r"
@@ -480,7 +490,7 @@ if scenario login "Terminus logged out: log in with a token, reuse it for the se
     pick "Add a first test" "n"
     pick "Commit to" "y"
     pick "Press Enter to continue" "\r"
-    pick "first run passed" ""
+    pick "The first run finished" ""
     pick "Press Enter to continue" "\r"
   '
   rc=$?
@@ -490,6 +500,7 @@ if scenario login "Terminus logged out: log in with a token, reuse it for the se
   c "logged Terminus in" grep -q 'terminus auth:login' "$FAKE_LOG"
   c "reused the token for the secret" grep -q 'secret PANTHEON_MACHINE_TOKEN set (10 chars)' "$FAKE_LOG"
   c "wrote multidev: false" shows "$repo" chore/drupal-qa:.github/workflows/drupal-qa.yml 'multidev: false'
+  c "said plainly when the results never reached the pull request" said "never reached the pull request"
   done_scenario
 fi
 

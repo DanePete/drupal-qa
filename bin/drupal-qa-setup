@@ -851,6 +851,8 @@ stage_workflow() {
     printf '%s\n' "name: Drupal QA" "" "on:" "  pull_request:" \
       "    types: [opened, synchronize, reopened, closed]" \
       "  push:" "    branches: [$DEFAULT_BRANCH]" "" "jobs:" "  qa:"
+    # New repositories only let workflows read; the results comment needs write.
+    printf '%s\n' "    permissions:" "      contents: read" "      pull-requests: write"
     printf '    uses: %s\n' "$WORKFLOW_USES"
     printf '%s\n' "    with:" "      pantheon_site: $SITE"
     [ "$MULTIDEV" = false ] && printf '      multidev: false\n'
@@ -1295,28 +1297,52 @@ watch_run() {
   done
   show_cursor
   gap
-  if [ "$conclusion" = success ]; then
-    ok "${B}The first run passed.$R"
-  else
-    warn "The run finished: $conclusion. The pull request comment says which step and why."
-  fi
-  local comment
+  local comment rows warned failed
   comment=$(gh api "repos/$GH_REPO/issues/${PR_URL##*/}/comments" \
     --jq '.[] | select(.body | startswith("<!-- drupal-qa -->")) | .body' 2> /dev/null | tail -40)
   ENV_URL=$(printf '%s' "$comment" | grep -o 'https://[a-z0-9-]*\.pantheonsite\.io' | head -1)
-  if [ -n "$comment" ]; then
+  if [ -z "$comment" ]; then
+    if [ "$conclusion" = success ]; then ok "The first run finished."; else warn "The run finished: $conclusion."; fi
+    warn "Its results never reached the pull request. The run's log says why: $RUN_URL"
+  else
+    rows=$(printf '%s\n' "$comment" | grep '^| ' | grep -v -- '---|' | grep -v '| Step |' \
+      | sed -E "s/^\| ([^|]+) \| (.*) \|$/\1\t\2/")
+    warned=$(printf '%s\n' "$rows" | grep -c 'warn')
+    failed=$(printf '%s\n' "$rows" | grep -v 'warn' | grep -c 'failed')
+    if [ "$failed" -gt 0 ]; then
+      bad "${B}The first run failed:$R $failed check(s) failed."
+    elif [ "$warned" -gt 0 ]; then
+      warn "${B}The first run passed, with $warned warning(s).$R Warnings never block a merge."
+    else
+      ok "${B}The first run passed.$R"
+    fi
     gap
-    printf '%s\n' "$comment" | grep '^| ' | grep -v -- '---|' | grep -v '| Step |' \
-      | sed -E "s/^\| ([^|]+) \| (.*) \|$/\1\t\2/" | while IFS=$'\t' read -r stepname result; do
-        case "$result" in
-          *passed*) printf '    %s✓%s %s\n' "$GREEN" "$R" "$stepname" ;;
-          *warn*) printf '    %s!%s %s %s(warns only)%s\n' "$YELLOW" "$R" "$stepname" "$GRAY" "$R" ;;
-          *failed*) printf '    %s✗%s %s\n' "$RED" "$R" "$stepname" ;;
-          *) printf '    %s–%s %s %s%s%s\n' "$GRAY" "$R" "$stepname" "$GRAY" "$result" "$R" ;;
-        esac
-      done
+    printf '%s\n' "$rows" | while IFS=$'\t' read -r stepname result; do
+      case "$result" in
+        *passed*) printf '    %s✓%s %s\n' "$GREEN" "$R" "$stepname" ;;
+        *warn*) printf '    %s!%s %s %s(warns only)%s\n' "$YELLOW" "$R" "$stepname" "$GRAY" "$R" ;;
+        *failed*) printf '    %s✗%s %s\n' "$RED" "$R" "$stepname" ;;
+        *) printf '    %s–%s %s %s%s%s\n' "$GRAY" "$R" "$stepname" "$GRAY" "$result" "$R" ;;
+      esac
+      # Behat names the scenario that broke, so show it here rather than make
+      # someone dig through the log.
+      if [ "$stepname" = Behat ] && [[ "$result" != *passed* ]]; then
+        behat_failures "$1" | sed "s/^/        $GRAY/; s/\$/$R/"
+      fi
+    done
   fi
-  [ -n "$ENV_URL" ] && { gap; kv "Environment" "$ENV_URL"; }
+  gap
+  kv "Pull request" "$PR_URL"
+  [ -n "$ENV_URL" ] && kv "Environment" "$ENV_URL"
+  kv "Run" "$RUN_URL"
+}
+
+# behat_failures RUN_ID: the "Failed steps" block from the run's Behat log.
+behat_failures() {
+  gh run view "$1" -R "$GH_REPO" --log 2> /dev/null \
+    | awk -F'\t' '$1 ~ /Behat$/ { sub(/^[0-9T:.Z-]+ /, "", $3); print $3 }' \
+    | awk '/^--- Failed steps:/ { f = 1; next } f && / scenarios \(/ { exit } f' \
+    | sed -E '/^[[:space:]]*$/d; s/^[0-9]+ (Scenario)/\1/' | head -12
 }
 
 # ─── Go ──────────────────────────────────────────────────────────────────

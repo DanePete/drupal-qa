@@ -54,6 +54,16 @@ case "$1 $2" in
     n=$(cat "$FAKE_STATE/run-list-polls" 2>/dev/null || echo 0); echo $((n + 1)) > "$FAKE_STATE/run-list-polls"
     [ "$n" -ge 1 ] && echo 4242 ;;
   "run view")
+    if [[ "$*" == *--log* ]]; then
+      # The Behat job's log, as gh prints it: job, step, timestamped line.
+      [ -n "${FAKE_BEHAT_FAILS:-}" ] && printf 'qa / Behat\tRun Behat\t2026-10-22T12:39:21.8810287Z %s\n' \
+        "--- Failed steps:" "" \
+        "001 Scenario: The home page says what we do # tests/behat/features/acme-site.feature:4" \
+        "      And I should see \"Welcome to Acme\"     # tests/behat/features/acme-site.feature:7" \
+        "        The text \"Welcome to Acme\" was not found anywhere in the text of the current page." \
+        "" "22 scenarios (21 passed, 1 failed)"
+      exit 0
+    fi
     n=$(cat "$FAKE_STATE/run-polls" 2>/dev/null || echo 0); echo $((n + 1)) > "$FAKE_STATE/run-polls"
     # One poll mid-run, then finished: one job per line, tab-separated.
     if [ "$n" -lt 1 ]; then
