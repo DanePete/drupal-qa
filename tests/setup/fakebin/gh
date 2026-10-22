@@ -22,7 +22,10 @@ case "$1 $2" in
   "secret list") r=$(repo_flag "$@"); cat "$FAKE_STATE/secrets-$(echo "$r" | tr / _)" 2>/dev/null; printf '%s\n' ${FAKE_SECRETS:-} ;;
   "secret set") r=$(repo_flag "$@"); v=$(cat); echo "$3" >> "$FAKE_STATE/secrets-$(echo "$r" | tr / _)"; echo "secret $3 set (${#v} chars)" >> "$FAKE_LOG" ;;
   "pr create") echo "https://github.com/$(repo_flag "$@")/pull/7" ;;
-  "run list") echo 4242 ;;
+  "run list")
+    # The run appears on the second poll, as it does on GitHub.
+    n=$(cat "$FAKE_STATE/run-list-polls" 2>/dev/null || echo 0); echo $((n + 1)) > "$FAKE_STATE/run-list-polls"
+    [ "$n" -ge 1 ] && echo 4242 ;;
   "run view")
     n=$(cat "$FAKE_STATE/run-polls" 2>/dev/null || echo 0); echo $((n + 1)) > "$FAKE_STATE/run-polls"
     if [ "$n" -lt 1 ]; then printf 'RUN\tin_progress\t\nqa / Plan\tcompleted\tsuccess\nqa / Code checks\tin_progress\t\nqa / Deploy\tqueued\t\n'

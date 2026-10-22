@@ -1059,7 +1059,7 @@ stage_run() {
   local id="" i=0
   hide_cursor
   while [ -z "$id" ] && [ "$i" -lt 60 ]; do
-    id=$(gh run list -R "$GH_REPO" --branch "$BRANCH" --limit 1 --json databaseId --jq '.[0].databaseId' 2> /dev/null)
+    id=$(gh run list -R "$GH_REPO" --branch "$BRANCH" --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2> /dev/null)
     printf '\r\033[K  %s%s%s Waiting for GitHub to start the run' "$CYAN" "${FRAMES[i % 10]}" "$R"
     i=$((i + 1))
     sleep 1
