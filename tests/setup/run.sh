@@ -174,6 +174,7 @@ if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; w
   c "raised config.platform.php to 8.3" grep -q '"php": "8.3"' "$site/composer.json"
   c "required thronedigital/drupal-qa" grep -q 'thronedigital/drupal-qa' "$site/composer.json"
   c "required drupal/core-dev matched to core" grep -q '"drupal/core-dev": "~11.4.8"' "$site/composer.json"
+  c "reported that no existing package changed" grep -a -q "No package the site already had changed version" "$T/transcript"
   c "created acme-org/acme-site with master" git --git-dir="$repo" rev-parse --verify -q master
   c "pushed the branch chore/drupal-qa" git --git-dir="$repo" rev-parse --verify -q chore/drupal-qa
   c "the commit has the workflow" sh -c "git --git-dir='$repo' show chore/drupal-qa:.github/workflows/drupal-qa.yml | grep -q 'pantheon_site: acme-site'"
@@ -307,6 +308,7 @@ if scenario taken "the name is taken by different history: refuse, pick another;
   unset FAKE_COMPOSER_FAIL_ONCE
   c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
   c "retried Composer with -W after it failed" grep -q 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:~11.4.8 -W' "$FAKE_LOG"
+  c "explained the first failure instead of dumping it" grep -a -q "Composer needs to adjust a few dependencies" "$T/transcript"
   c "left the other repository's history alone" sh -c "test \"\$(git --git-dir='$FAKE_GH/acme-org/acme-site.git' log --format=%s master)\" = \"Someone else's work\""
   c "never force-pushed" sh -c "! grep -q -- '--force' '$FAKE_LOG'"
   c "created acme-site-2 instead" git --git-dir="$FAKE_GH/acme-org/acme-site-2.git" rev-parse --verify -q chore/drupal-qa

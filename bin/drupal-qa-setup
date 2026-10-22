@@ -180,8 +180,8 @@ menu() {
   shift
   local opts=("$@")
   n=${#opts[@]}
-  printf '  %s%s%s %s↑↓ then Enter%s\n' "$B" "$q" "$R" "$GRAY" "$R"
   stty -echo < /dev/tty 2> /dev/null
+  printf '  %s%s%s %s↑↓ then Enter%s\n' "$B" "$q" "$R" "$GRAY" "$R"
   hide_cursor
   _menu_draw() {
     for ((i = 0; i < n; i++)); do
@@ -259,6 +259,9 @@ spin() {
   [ "$ANIM" = 1 ] && printf '\r\033[K'
   if [ "$rc" = 0 ]; then
     if [ "$took" -ge 2 ]; then ok "$msg $GRAY${took}s$R"; else ok "$msg"; fi
+  elif [ -n "${SPIN_SOFT:-}" ]; then
+    # An expected first failure: say what it means, keep the log for later.
+    warn "$SPIN_SOFT"
   else
     bad "$msg"
     tail -n 12 "$LAST_LOG" | sed "s/^/      $GRAY/; s/\$/$R/"
@@ -425,6 +428,13 @@ lock_version() {
     index($0, "\"name\": \"" p "\"") { f = 1; $0 = substr($0, index($0, "\"name\": \"" p "\"")) }
     f && match($0, /"version": *"[^"]*"/) { v = substr($0, RSTART, RLENGTH); sub(/^"version": *"/, "", v); sub(/"$/, "", v); print v; exit }
   ' composer.lock
+}
+
+# lock_versions: "name version" for every package in composer.lock.
+lock_versions() {
+  [ -f composer.lock ] || return 0
+  awk '/"name": "/ { n = $0; sub(/.*"name": "/, "", n); sub(/".*/, "", n) }
+    /"version": "/ && n != "" { v = $0; sub(/.*"version": "/, "", v); sub(/".*/, "", v); print n, v; n = "" }' composer.lock | sort
 }
 
 # installed_version: "v2", "v1" or "" from composer.lock.
@@ -706,14 +716,21 @@ stage_package() {
   else
     [ "$INSTALLED" = v1 ] && say "Upgrading drupal-qa from v1."
     say "Composer may take a few minutes."
-    local w=()
+    local w=() before
     [ "$INSTALLED" = v1 ] && w=(-W)
-    if ! act "composer require --dev ${wants[*]}" "${COMPOSER[@]}" require --dev "${wants[@]}" "${w[@]}" --no-interaction; then
+    before=$(lock_versions)
+    if ! SPIN_SOFT="Composer needs to adjust a few dependencies to fit these in. That's common." \
+      act "Adding ${wants[*]}" "${COMPOSER[@]}" require --dev "${wants[@]}" "${w[@]}" --no-interaction; then
+      gap
+      muted "Setup tried first without changing anything already installed. Letting Composer"
+      muted "update the packages these depend on (-W) usually fixes it; any version it"
+      muted "changes is listed next, before anything is committed."
       gap
       confirm "Try again, letting Composer update the packages these depend on?" y || exit 1
-      act "composer require --dev ${wants[*]} -W" "${COMPOSER[@]}" require --dev "${wants[@]}" -W --no-interaction \
+      act "Adding ${wants[*]}, with -W" "${COMPOSER[@]}" require --dev "${wants[@]}" -W --no-interaction \
         || { bad "Composer couldn't install them. The output above says why."; exit 1; }
     fi
+    show_changed_versions "$before"
     case "$INSTALLED" in
       v2) DONE_NOTES+=("Installed drupal/core-dev") ;;
       v1) DONE_NOTES+=("Upgraded drupal-qa to v2") ;;
@@ -735,6 +752,19 @@ stage_package() {
   fi
   gap
   pause
+}
+
+# show_changed_versions BEFORE: lists packages the site already had whose
+# version Composer changed, so they're seen before anything is committed.
+show_changed_versions() {
+  [ "$DRY" = 1 ] && return 0
+  local changed
+  changed=$(join <(printf '%s\n' "$1") <(lock_versions) | awk '$2 != $3 { printf "%s %s → %s\n", $1, $2, $3 }')
+  [ -z "$changed" ] && { ok "No package the site already had changed version"; return 0; }
+  gap
+  warn "Composer changed $(printf '%s\n' "$changed" | wc -l | tr -d ' ') package(s) the site already had:"
+  printf '%s\n' "$changed" | sed "s/^/      /"
+  muted "    Check these in the pull request before merging."
 }
 
 stage_workflow() {
@@ -1141,15 +1171,21 @@ watch_run() {
 
 # ─── Go ──────────────────────────────────────────────────────────────────
 
-welcome
-stage_tools
-stage_project
-stage_site
-stage_package
-stage_workflow
-stage_github
-stage_token
-stage_ssh
-stage_pr
-stage_run
-finish_screen
+# One function, called on the last line: bash has parsed the whole file
+# before the first prompt, so editing it mid-run can't break a run.
+main() {
+  welcome
+  stage_tools
+  stage_project
+  stage_site
+  stage_package
+  stage_workflow
+  stage_github
+  stage_token
+  stage_ssh
+  stage_pr
+  stage_run
+  finish_screen
+}
+
+main "$@"; exit
