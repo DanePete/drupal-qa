@@ -3,14 +3,37 @@
 echo "composer $*" >> "$FAKE_LOG"
 case "$1" in
   --version) echo "Composer version 2.8.0" ;;
-  config) php -r '$f="composer.json"; $j=json_decode(file_get_contents($f),true); $j["config"]["platform"]["php"]=$argv[1]; file_put_contents($f, json_encode($j, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");' "$3" ;;
+  config)
+    php -- "$3" << 'PHP'
+<?php
+$f = "composer.json";
+$j = json_decode(file_get_contents($f), TRUE);
+$j["config"]["platform"]["php"] = $argv[1];
+file_put_contents($f, json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+PHP
+    ;;
   require)
-    [ -n "${FAKE_COMPOSER_FAIL_ONCE:-}" ] && [ ! -f "$FAKE_STATE/composer-failed" ] && { touch "$FAKE_STATE/composer-failed"; echo "Your requirements could not be resolved" >&2; exit 2; }
+    if [ -n "${FAKE_COMPOSER_FAIL_ONCE:-}" ] && [ ! -f "$FAKE_STATE/composer-failed" ]; then
+      touch "$FAKE_STATE/composer-failed"
+      echo "Your requirements could not be resolved" >&2
+      exit 2
+    fi
     shift
     for arg in "$@"; do
       case "$arg" in -*) continue ;; esac
-      php -r '[$name, $c] = explode(":", $argv[1], 2); $f = "composer.json"; $j = json_decode(file_get_contents($f), true); $j["require-dev"][$name] = $c; file_put_contents($f, json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-        $l = json_decode(file_get_contents("composer.lock"), true); $l["packages-dev"] = array_values(array_filter($l["packages-dev"] ?? [], fn($p) => $p["name"] !== $name)); $l["packages-dev"][] = ["name" => $name, "version" => $name === "thronedigital/drupal-qa" ? "v2.1.0" : "11.4.8"]; file_put_contents("composer.lock", json_encode($l, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");' "$arg"
+      php -- "$arg" << 'PHP'
+<?php
+[$name, $constraint] = explode(":", $argv[1], 2);
+$flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES;
+$j = json_decode(file_get_contents("composer.json"), TRUE);
+$j["require-dev"][$name] = $constraint;
+file_put_contents("composer.json", json_encode($j, $flags) . "\n");
+$l = json_decode(file_get_contents("composer.lock"), TRUE);
+$l["packages-dev"] = array_values(array_filter($l["packages-dev"] ?? [], fn($p) => $p["name"] !== $name));
+$version = $name === "thronedigital/drupal-qa" ? "v2.1.0" : "11.4.8";
+$l["packages-dev"][] = ["name" => $name, "version" => $version];
+file_put_contents("composer.lock", json_encode($l, $flags) . "\n");
+PHP
     done ;;
   *) echo "fake composer: unhandled $*" >&2; exit 3 ;;
 esac

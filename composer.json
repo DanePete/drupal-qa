@@ -1,6 +1,6 @@
 {
     "name": "thronedigital/drupal-qa",
-    "description": "CI for Drupal sites on Pantheon: checks on every pull request, a multidev per pull request, and deploys that wait until Pantheon is really serving the new code.",
+    "description": "CI for Drupal on Pantheon: checks and a tested multidev for every pull request, and safe deploys.",
     "type": "library",
     "license": "MIT",
     "keywords": [

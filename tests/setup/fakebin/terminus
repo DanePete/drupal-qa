@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
 # Fake Terminus for the setup wizard's tests. Behaviour comes from FAKE_* env.
 echo "terminus $*" >> "$FAKE_LOG"
+read -r -a sites <<< "${FAKE_SITES:-acme-site acme-intranet northwind}"
 case "$1" in
   --version) echo "Terminus 4.3.1" ;;
-  auth:whoami) [ -n "${FAKE_TERMINUS_LOGGED_OUT:-}" ] && [ ! -f "$FAKE_STATE/terminus-in" ] && exit 1; echo "dev@example.test" ;;
+  auth:whoami)
+    [ -n "${FAKE_TERMINUS_LOGGED_OUT:-}" ] && [ ! -f "$FAKE_STATE/terminus-in" ] && exit 1
+    echo "dev@example.test" ;;
   auth:login) touch "$FAKE_STATE/terminus-in"; echo "Logged in" ;;
-  site:list) printf '%s\n' ${FAKE_SITES:-acme-site acme-intranet northwind} ;;
+  site:list) printf '%s\n' "${sites[@]}" ;;
   site:info)
     site=$2; [ "$site" = "${FAKE_UUID:-none}" ] && site=${FAKE_SITE:-acme-site}
-    printf '%s\n' ${FAKE_SITES:-acme-site acme-intranet northwind} | grep -qx "$site" || { echo "[error] not found" >&2; exit 1; }
+    printf '%s\n' "${sites[@]}" | grep -qx "$site" || { echo "[error] not found" >&2; exit 1; }
     case "$*" in *label*) echo "Acme Site" ;; *plan_name*) echo "Sandbox" ;; *name*) echo "$site" ;; esac ;;
   multidev:list) [ "${FAKE_MULTIDEV:-1}" = 1 ] || { echo "[error] no multidev" >&2; exit 1; }; echo "" ;;
-  local:clone) mkdir -p "$HOME/pantheon-local-copies"; cp -R "$FAKE_FIXTURE" "$HOME/pantheon-local-copies/$2"; echo "cloned" ;;
+  local:clone)
+    mkdir -p "$HOME/pantheon-local-copies"
+    cp -R "$FAKE_FIXTURE" "$HOME/pantheon-local-copies/$2"
+    echo "cloned" ;;
   ssh-key:list) [ -f "$FAKE_STATE/key-added" ] && cat "$FAKE_STATE/key-added"; exit 0 ;;
-  ssh-key:add) ssh-keygen -l -E md5 -f "$2" | awk '{print $2}' | sed 's/^MD5://; s/://g' > "$FAKE_STATE/key-added"; echo "added" ;;
+  ssh-key:add)
+    ssh-keygen -l -E md5 -f "$2" | awk '{print $2}' | sed 's/^MD5://; s/://g' > "$FAKE_STATE/key-added"
+    echo "added" ;;
   *) echo "fake terminus: unhandled $*" >&2; exit 3 ;;
 esac

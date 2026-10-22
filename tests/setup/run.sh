@@ -45,7 +45,8 @@ fixture() { # fixture DIR PHP [v1|v2|none]
 EOF
   local dev='[]'
   [ "$qa" = v1 ] && dev='[{"name": "thronedigital/drupal-qa", "version": "v1.3.3"}]'
-  [ "$qa" = v2 ] && dev='[{"name": "thronedigital/drupal-qa", "version": "v2.1.0"}, {"name": "drupal/core-dev", "version": "11.4.8"}]'
+  [ "$qa" = v2 ] && dev='[{"name": "thronedigital/drupal-qa", "version": "v2.1.0"},
+        {"name": "drupal/core-dev", "version": "11.4.8"}]'
   cat > composer.lock << EOF
 {
     "packages": [
@@ -65,7 +66,8 @@ EOF
     done
   fi
   git add -A && git commit -q -m "Initial site"
-  git remote add origin "ssh://codeserver.dev.11111111-2222-3333-4444-555555555555@codeserver.dev.11111111-2222-3333-4444-555555555555.drush.in:2222/~/repository.git"
+  local host="codeserver.dev.$FAKE_UUID"
+  git remote add origin "ssh://$host@$host.drush.in:2222/~/repository.git"
 }
 
 setup_world() { # fresh HOME, fake GitHub and Pantheon state
@@ -77,7 +79,18 @@ setup_world() { # fresh HOME, fake GitHub and Pantheon state
   git config --global url."file://$FAKE_GH/".insteadOf "https://github.com/"
   git config --global init.defaultBranch master
   git config --global user.name "Test" && git config --global user.email "test@example.test"
-  printf '<!-- drupal-qa -->\n### Drupal QA\n\n**Environment:** [pr-7](https://pr-7-acme-site.pantheonsite.io)\n\n| Step | Result |\n|---|---|\n| PHPCS | ✅ passed |\n| Composer audit | ⚠️ failed (warn only) |\n| Behat | ✅ passed |\n' > "$FAKE_COMMENT"
+  cat > "$FAKE_COMMENT" << 'EOF'
+<!-- drupal-qa -->
+### Drupal QA
+
+**Environment:** [pr-7](https://pr-7-acme-site.pantheonsite.io)
+
+| Step | Result |
+|---|---|
+| PHPCS | ✅ passed |
+| Composer audit | ⚠️ failed (warn only) |
+| Behat | ✅ passed |
+EOF
   export PATH="$HERE/fakebin:$PATH" TERM=xterm-256color DRUPAL_QA_NO_ANIMATION=1
 }
 
@@ -106,7 +119,13 @@ drive() {
 }
 
 # has_bytes PRINTF-FORMAT FILE: the file contains these exact bytes.
+# shellcheck disable=SC2059 # the format is the point: it spells the bytes.
 has_bytes() { LC_ALL=C grep -a -q "$(printf "$1")" "$2"; }
+
+# Checks for c: what the fakes were asked, what the wizard said, what a commit holds.
+logged() { grep -q -- "$1" "$FAKE_LOG"; }
+said() { grep -a -q -- "$1" "$T/transcript"; }
+shows() { git --git-dir="$1" show "$2" 2> /dev/null | grep -q -- "$3"; } # shows REPO REV:PATH PATTERN
 
 c() { # c "description" test-command...
   local d=$1
@@ -177,18 +196,20 @@ if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; w
   c "raised config.platform.php to 8.3" grep -q '"php": "8.3"' "$site/composer.json"
   c "required thronedigital/drupal-qa" grep -q 'thronedigital/drupal-qa' "$site/composer.json"
   c "required drupal/core-dev matched to core" grep -q '"drupal/core-dev": "~11.4.8"' "$site/composer.json"
-  c "reported that no existing package changed" grep -a -q "No package the site already had changed version" "$T/transcript"
+  c "reported that no existing package changed" said "No package the site already had changed version"
   c "created acme-org/acme-site with master" git --git-dir="$repo" rev-parse --verify -q master
   c "pushed the branch chore/drupal-qa" git --git-dir="$repo" rev-parse --verify -q chore/drupal-qa
-  c "the commit has the workflow" sh -c "git --git-dir='$repo' show chore/drupal-qa:.github/workflows/drupal-qa.yml | grep -q 'pantheon_site: acme-site'"
-  c "the workflow deploys from master" sh -c "git --git-dir='$repo' show chore/drupal-qa:.github/workflows/drupal-qa.yml | grep -q 'branches: \[master\]'"
-  c "the commit has the first test" sh -c "git --git-dir='$repo' show chore/drupal-qa:tests/behat/features/acme-site.feature | grep -q 'Welcome to Acme'"
+  workflow=chore/drupal-qa:.github/workflows/drupal-qa.yml
+  c "the commit has the workflow" shows "$repo" "$workflow" 'pantheon_site: acme-site'
+  c "the workflow deploys from master" shows "$repo" "$workflow" 'branches: \[master\]'
+  c "the commit has the first test" \
+    shows "$repo" chore/drupal-qa:tests/behat/features/acme-site.feature 'Welcome to Acme'
   c "the commit has composer.lock" sh -c "git --git-dir='$repo' show chore/drupal-qa --stat | grep -q composer.lock"
   c "rejected the bad token, set the good one" grep -q 'secret PANTHEON_MACHINE_TOKEN set (10 chars)' "$FAKE_LOG"
   c "set PANTHEON_SSH_KEY" grep -q 'secret PANTHEON_SSH_KEY set' "$FAKE_LOG"
   c "made an RSA key" sh -c "head -1 '$HOME/.ssh/drupal_qa' | grep -q 'RSA PRIVATE KEY'"
   c "added the key to Pantheon" test -s "$FAKE_STATE/key-added"
-  c "opened the pull request" grep -q 'gh pr create -R acme-org/acme-site --base master --head chore/drupal-qa' "$FAKE_LOG"
+  c "opened the pull request" logged 'gh pr create -R acme-org/acme-site --base master --head chore/drupal-qa'
   c "never printed the token" sh -c "! grep -q 'good-token' '$T/transcript'"
   c "never force-pushed" sh -c "! grep -q -- '--force' '$FAKE_LOG'"
   c "drew the job board's icons intact" has_bytes '\342\234\223\033\\[0m Plan' "$T/transcript"
@@ -200,7 +221,24 @@ if scenario rerun "already installed and on GitHub with both secrets: keep every
   fixture "$FAKE_FIXTURE" 8.3 v2 > /dev/null
   cd "$FAKE_FIXTURE" || exit 1
   mkdir -p .github/workflows
-  printf 'name: Drupal QA\n\non:\n  pull_request:\n    types: [opened, synchronize, reopened, closed]\n  push:\n    branches: [master]\n\njobs:\n  qa:\n    uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2\n    with:\n      pantheon_site: acme-site\n    secrets:\n      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}\n      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}\n' > .github/workflows/drupal-qa.yml
+  cat > .github/workflows/drupal-qa.yml << 'EOF'
+name: Drupal QA
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [master]
+
+jobs:
+  qa:
+    uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
+    with:
+      pantheon_site: acme-site
+    secrets:
+      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
+      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
+EOF
   git add -A && git commit -q -m "drupal-qa"
   mkdir -p "$FAKE_GH/acme-org" && git init -q --bare "$FAKE_GH/acme-org/acme-site.git"
   git remote add github "https://github.com/acme-org/acme-site.git" && git push -q github master
@@ -268,9 +306,11 @@ if scenario upgrade "drupal-qa v1 with its four workflows"; then
   unset FAKE_SECRETS
   repo="$FAKE_GH/acme-org/acme-site.git"
   c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
-  c "upgraded with -W, adding core-dev" grep -q 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:~11.4.8 -W' "$FAKE_LOG"
-  c "the commit removes all four v1 workflows" sh -c "test \$(git --git-dir='$repo' show --name-status --format= chore/drupal-qa | grep -c '^D') = 4"
-  c "the commit adds drupal-qa.yml" sh -c "git --git-dir='$repo' show --name-status --format= chore/drupal-qa | grep -q 'A.*drupal-qa.yml'"
+  c "upgraded with -W, adding core-dev" \
+    logged 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:~11.4.8 -W'
+  changes=$(git --git-dir="$repo" show --name-status --format= chore/drupal-qa)
+  c "the commit removes all four v1 workflows" test "$(grep -c '^D' <<< "$changes")" = 4
+  c "the commit adds drupal-qa.yml" grep -q 'A.*drupal-qa.yml' <<< "$changes"
   done_scenario
 fi
 
@@ -280,7 +320,10 @@ if scenario taken "the name is taken by different history: refuse, pick another;
   cd "$FAKE_FIXTURE" || exit 1
   export FAKE_COMPOSER_FAIL_ONCE=1
   mkdir -p "$FAKE_GH/acme-org" "$T/other"
-  (cd "$T/other" && git init -q -b master && git commit -q --allow-empty -m "Someone else's work" && git push -q "$FAKE_GH/acme-org/acme-site.git" master 2> /dev/null || { git init -q --bare "$FAKE_GH/acme-org/acme-site.git"; git push -q "$FAKE_GH/acme-org/acme-site.git" master; })
+  other="$FAKE_GH/acme-org/acme-site.git"
+  git init -q --bare "$other"
+  (cd "$T/other" && git init -q -b master && git commit -q --allow-empty -m "Someone else's work" \
+    && git push -q "$other" master)
   drive "" '
     pick "Press Enter to start" "\r"
     pick "Press Enter to continue" "\r"
@@ -311,11 +354,14 @@ if scenario taken "the name is taken by different history: refuse, pick another;
   rc=$?
   unset FAKE_COMPOSER_FAIL_ONCE
   c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
-  c "retried Composer with -W after it failed" grep -q 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:~11.4.8 -W' "$FAKE_LOG"
-  c "explained the first failure instead of dumping it" grep -a -q "without updating some installed packages" "$T/transcript"
-  c "left the other repository's history alone" sh -c "test \"\$(git --git-dir='$FAKE_GH/acme-org/acme-site.git' log --format=%s master)\" = \"Someone else's work\""
+  c "retried Composer with -W after it failed" \
+    logged 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:~11.4.8 -W'
+  c "explained the first failure instead of dumping it" said "without updating some installed packages"
+  c "left the other repository's history alone" \
+    test "$(git --git-dir="$other" log --format=%s master)" = "Someone else's work"
   c "never force-pushed" sh -c "! grep -q -- '--force' '$FAKE_LOG'"
-  c "created acme-site-2 instead" git --git-dir="$FAKE_GH/acme-org/acme-site-2.git" rev-parse --verify -q chore/drupal-qa
+  c "created acme-site-2 instead" \
+    git --git-dir="$FAKE_GH/acme-org/acme-site-2.git" rev-parse --verify -q chore/drupal-qa
   c "removed the abandoned remote" sh -c "git remote get-url github | grep -q acme-site-2"
   done_scenario
 fi
@@ -353,7 +399,8 @@ if scenario older "GitHub has an older copy of the same history: fast-forward it
   '
   rc=$?
   c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
-  c "brought GitHub's master up to date" sh -c "test \"\$(git --git-dir='$FAKE_GH/acme-org/acme-site.git' log -1 --format=%s master)\" = 'Newer work on Pantheon'"
+  c "brought GitHub's master up to date" \
+    test "$(git --git-dir="$FAKE_GH/acme-org/acme-site.git" log -1 --format=%s master)" = 'Newer work on Pantheon'
   c "listed the key to add by hand" grep -q 'Add .*drupal_qa.pub at https://dashboard.pantheon.io' "$T/transcript"
   done_scenario
 fi
@@ -441,7 +488,7 @@ if scenario login "Terminus logged out: log in with a token, reuse it for the se
   c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
   c "logged Terminus in" grep -q 'terminus auth:login' "$FAKE_LOG"
   c "reused the token for the secret" grep -q 'secret PANTHEON_MACHINE_TOKEN set (10 chars)' "$FAKE_LOG"
-  c "wrote multidev: false" sh -c "git --git-dir='$repo' show chore/drupal-qa:.github/workflows/drupal-qa.yml | grep -q 'multidev: false'"
+  c "wrote multidev: false" shows "$repo" chore/drupal-qa:.github/workflows/drupal-qa.yml 'multidev: false'
   done_scenario
 fi
 
@@ -495,7 +542,8 @@ if scenario refused "GitHub refuses the new repository: choose again, without In
   unset FAKE_GH_CREATE_FAILS
   c "went back to the owner menu after the refusal" grep -a -q "Choose again" "$T/transcript"
   c "never offered Internal" sh -c "! grep -a -q 'Internal' '$T/transcript'"
-  c "created acme-org/acme-site on the second try" git --git-dir="$FAKE_GH/acme-org/acme-site.git" rev-parse --verify -q master
+  c "created acme-org/acme-site on the second try" \
+    git --git-dir="$FAKE_GH/acme-org/acme-site.git" rev-parse --verify -q master
   c "left no stray remote behind" sh -c "cd '$FAKE_FIXTURE' && git remote get-url github | grep -q acme-org/acme-site"
   done_scenario
 fi
