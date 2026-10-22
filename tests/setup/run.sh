@@ -441,5 +441,26 @@ if scenario login "Terminus logged out: log in with a token, reuse it for the se
   done_scenario
 fi
 
+# ─────────────────────────────────────────────────────────────────────────
+if scenario interrupt "Ctrl-C at a menu and at a text prompt stops cleanly"; then
+  fixture "$FAKE_FIXTURE" 8.3 none > /dev/null
+  cd "$FAKE_FIXTURE" || exit 1
+  drive "" '
+    pick "Press Enter to start" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Use acme-site" "y"
+    pick "Press Enter to continue" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Who should own" "\003"
+    pick "Stopped" ""
+  '
+  rc=$?
+  c "stopped at the owner menu with the resume message (exit $rc)" grep -a -q "Run it again any time" "$T/transcript"
+  c "left the terminal echoing" sh -c "! grep -a -q 'stty: ' '$T/expect.out'"
+  done_scenario
+fi
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = 0 ]

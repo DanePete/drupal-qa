@@ -180,8 +180,10 @@ menu() {
   shift
   local opts=("$@")
   n=${#opts[@]}
-  stty -echo < /dev/tty 2> /dev/null
   printf '  %s%s%s %s↑↓ then Enter%s\n' "$B" "$q" "$R" "$GRAY" "$R"
+  # After the question, not before: a Ctrl-C that lands while bash 3.2 sits
+  # in the menu's read is otherwise held until a key arrives.
+  stty -echo < /dev/tty 2> /dev/null
   hide_cursor
   _menu_draw() {
     for ((i = 0; i < n; i++)); do
