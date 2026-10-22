@@ -721,14 +721,14 @@ stage_package() {
     local w=() before
     [ "$INSTALLED" = v1 ] && w=(-W)
     before=$(lock_versions)
-    if ! SPIN_SOFT="Composer needs to adjust a few dependencies to fit these in. That's common." \
+    if ! SPIN_SOFT="Composer can't add these without updating some installed packages. That's common." \
       act "Adding ${wants[*]}" "${COMPOSER[@]}" require --dev "${wants[@]}" "${w[@]}" --no-interaction; then
       gap
-      muted "Setup tried first without changing anything already installed. Letting Composer"
-      muted "update the packages these depend on (-W) usually fixes it; any version it"
-      muted "changes is listed next, before anything is committed."
+      muted "Setup first asks Composer to leave every installed package alone, and here it"
+      muted "can't. Letting it update the packages these depend on (-W) usually works. Any"
+      muted "version it changes is listed next, before anything is committed."
       gap
-      confirm "Try again, letting Composer update the packages these depend on?" y || exit 1
+      confirm "Let Composer update the packages these depend on?" y || exit 1
       act "Adding ${wants[*]}, with -W" "${COMPOSER[@]}" require --dev "${wants[@]}" -W --no-interaction \
         || { bad "Composer couldn't install them. The output above says why."; exit 1; }
     fi
@@ -836,28 +836,40 @@ stage_github() {
   else
     say "This project isn't on GitHub yet."
     gap
-    local me owners=() name vis
+    local me owners=() owner="" name vis visibilities=()
     me=$(gh api user --jq .login 2> /dev/null)
     owners=("$me")
     while IFS= read -r o; do [ -n "$o" ] && owners+=("$o"); done < <(gh api user/orgs --jq '.[].login' 2> /dev/null)
-    menu "Who should own the repository?" "${owners[@]}"
-    local owner=$MENU_VALUE
     while true; do
+      if [ -z "$owner" ]; then
+        menu "Who should own the repository?" "${owners[@]}"
+        owner=$MENU_VALUE
+      fi
       ask name "Repository name:" "$SITE"
       GH_REPO="$owner/$name"
       if gh repo view "$GH_REPO" --json name > /dev/null 2>&1; then
         warn "$GH_REPO already exists."
         if adopt_existing_repo; then break; fi
-      else
-        menu "Visibility?" "Private" "Internal (organization only)" "Public"
-        vis=$(printf '%s' "$MENU_VALUE" | awk '{print tolower($1)}')
-        if confirm "Create $GH_REPO ($vis) and push the ${B}$(git symbolic-ref --short HEAD)$R branch to it?" y; then
-          act "Creating $GH_REPO" gh repo create "$GH_REPO" "--$vis" --source . --remote github --push || exit 1
-          GH_REMOTE=github
-          DONE_NOTES+=("Created $GH_REPO on GitHub")
-          break
-        fi
+        continue
       fi
+      # GitHub has internal repositories only in Enterprise organizations.
+      visibilities=("Private" "Public")
+      if [ "$owner" != "$me" ] && [ "$(gh api "orgs/$owner" --jq .plan.name 2> /dev/null)" = enterprise ]; then
+        visibilities=("Private" "Internal (organization only)" "Public")
+      fi
+      menu "Visibility?" "${visibilities[@]}"
+      vis=$(printf '%s' "$MENU_VALUE" | awk '{print tolower($1)}')
+      confirm "Create $GH_REPO ($vis) and push the ${B}$(git symbolic-ref --short HEAD)$R branch to it?" y || continue
+      if act "Creating $GH_REPO" gh repo create "$GH_REPO" "--$vis" --source . --remote github --push; then
+        GH_REMOTE=github
+        DONE_NOTES+=("Created $GH_REPO on GitHub")
+        break
+      fi
+      # A remote left by the failed attempt would block the next one.
+      gh repo view "$GH_REPO" --json name > /dev/null 2>&1 || git remote remove github 2> /dev/null
+      warn "GitHub didn't create it, for the reason above. Choose again."
+      gap
+      owner=""
     done
   fi
   DEFAULT_BRANCH=$(gh repo view "$GH_REPO" --json defaultBranchRef --jq .defaultBranchRef.name 2> /dev/null)

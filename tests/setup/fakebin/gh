@@ -10,9 +10,15 @@ case "$1 $2" in
     r=$3; [ -d "$FAKE_GH/$r.git" ] || { echo "not found" >&2; exit 1; }
     case "$*" in *defaultBranchRef*) git --git-dir="$FAKE_GH/$r.git" symbolic-ref --short HEAD 2>/dev/null || echo "";; *) echo "{\"name\":\"$r\"}";; esac ;;
   "repo create")
-    r=$3; mkdir -p "$FAKE_GH/$(dirname "$r")"; git init -q --bare "$FAKE_GH/$r.git"
+    r=$3
+    if [ -n "${FAKE_GH_CREATE_FAILS:-}" ] && [ ! -e "$FAKE_STATE/create-refused" ]; then
+      touch "$FAKE_STATE/create-refused"; echo "GraphQL: devuser cannot create repositories here" >&2; exit 1
+    fi
+    case "$*" in *--internal*) echo "internal repositories can only be created within an organization" >&2; exit 1 ;; esac
+    mkdir -p "$FAKE_GH/$(dirname "$r")"; git init -q --bare "$FAKE_GH/$r.git"
     b=$(git symbolic-ref --short HEAD); git --git-dir="$FAKE_GH/$r.git" symbolic-ref HEAD "refs/heads/$b"
     git remote add github "https://github.com/$r.git" && git push -q -u github HEAD 2>&1 && echo "https://github.com/$r" ;;
+  "api orgs/"*) echo "${FAKE_ORG_PLAN:-team}" ;;
   "api repos/"*)
     r=${2#repos/}
     case "$r" in

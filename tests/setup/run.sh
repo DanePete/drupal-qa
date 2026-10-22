@@ -287,7 +287,7 @@ if scenario taken "the name is taken by different history: refuse, pick another;
     pick "Press Enter to continue" "\r"
     pick "Use acme-site" "y"
     pick "Press Enter to continue" "\r"
-    pick "Try again, letting Composer" "y"
+    pick "Let Composer update the packages" "y"
     pick "Press Enter to continue" "\r"
     pick "Press Enter to continue" "\r"
     pick "Who should own" "2"
@@ -312,7 +312,7 @@ if scenario taken "the name is taken by different history: refuse, pick another;
   unset FAKE_COMPOSER_FAIL_ONCE
   c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
   c "retried Composer with -W after it failed" grep -q 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:~11.4.8 -W' "$FAKE_LOG"
-  c "explained the first failure instead of dumping it" grep -a -q "Composer needs to adjust a few dependencies" "$T/transcript"
+  c "explained the first failure instead of dumping it" grep -a -q "without updating some installed packages" "$T/transcript"
   c "left the other repository's history alone" sh -c "test \"\$(git --git-dir='$FAKE_GH/acme-org/acme-site.git' log --format=%s master)\" = \"Someone else's work\""
   c "never force-pushed" sh -c "! grep -q -- '--force' '$FAKE_LOG'"
   c "created acme-site-2 instead" git --git-dir="$FAKE_GH/acme-org/acme-site-2.git" rev-parse --verify -q chore/drupal-qa
@@ -463,6 +463,40 @@ if scenario interrupt "Ctrl-C at a menu and at a text prompt stops cleanly"; the
   rc=$?
   c "stopped at the owner menu with the resume message (exit $rc)" grep -a -q "Run it again any time" "$T/transcript"
   c "left the terminal echoing" sh -c "! grep -a -q 'stty: ' '$T/expect.out'"
+  done_scenario
+fi
+
+# ─────────────────────────────────────────────────────────────────────────
+if scenario refused "GitHub refuses the new repository: choose again, without Internal on a personal account"; then
+  fixture "$FAKE_FIXTURE" 8.3 none > /dev/null
+  cd "$FAKE_FIXTURE" || exit 1
+  export FAKE_GH_CREATE_FAILS=1
+  drive "" '
+    pick "Press Enter to start" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Use acme-site" "y"
+    pick "Press Enter to continue" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Who should own" "\r"
+    pick "Repository name" "\r"
+    pick "Visibility" "\r"
+    pick "Create devuser/acme-site" "y"
+    pick "Choose again" ""
+    pick "Who should own" "2"
+    pick "Repository name" "\r"
+    pick "Visibility" "\r"
+    pick "Create acme-org/acme-site" "y"
+    pick "Press Enter to continue" "\r"
+    pick "Paste the token" "\003"
+    pick "Stopped" ""
+  '
+  unset FAKE_GH_CREATE_FAILS
+  c "went back to the owner menu after the refusal" grep -a -q "Choose again" "$T/transcript"
+  c "never offered Internal" sh -c "! grep -a -q 'Internal' '$T/transcript'"
+  c "created acme-org/acme-site on the second try" git --git-dir="$FAKE_GH/acme-org/acme-site.git" rev-parse --verify -q master
+  c "left no stray remote behind" sh -c "cd '$FAKE_FIXTURE' && git remote get-url github | grep -q acme-org/acme-site"
   done_scenario
 fi
 
