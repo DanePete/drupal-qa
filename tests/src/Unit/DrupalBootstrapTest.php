@@ -3,22 +3,24 @@
 namespace DrupalQa\Tests\Unit;
 
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Verifies that the Drupal test bootstrap is working correctly.
  *
- * If this test fails, PHPUnit is not properly configured to bootstrap Drupal.
- * Check that phpunit.xml has the correct bootstrap path to web/core/tests/bootstrap.php.
+ * If this test fails, PHPUnit is not set up to bootstrap Drupal: check that
+ * phpunit.xml points its bootstrap at web/core/tests/bootstrap.php.
  *
  * @group drupal_qa
  */
+#[Group('drupal_qa')]
 class DrupalBootstrapTest extends UnitTestCase {
 
   /**
-   * Tests that UnitTestCase can be instantiated.
+   * Tests that UnitTestCase found the Drupal root.
    */
   public function testDrupalUnitTestCaseWorks(): void {
-    $this->assertTrue(TRUE, 'Drupal UnitTestCase bootstrap is working.');
+    $this->assertFileExists($this->root . '/core/lib/Drupal.php', 'UnitTestCase should find the Drupal root.');
   }
 
   /**

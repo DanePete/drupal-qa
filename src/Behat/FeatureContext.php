@@ -6,6 +6,7 @@ namespace DrupalQa\Behat;
 
 use Behat\Behat\Hook\Scope\AfterStepScope;
 use Behat\Mink\Exception\ElementNotFoundException;
+use Drupal\Driver\DrushDriver;
 use Drupal\DrupalExtension\Context\RawDrupalContext;
 
 /**
@@ -48,15 +49,14 @@ class FeatureContext extends RawDrupalContext {
         return;
       }
     }
-    $drush = $this->getDriver('drush');
     $name = 'drupal_qa_' . bin2hex(random_bytes(4));
-    $drush->drush('user:create', [escapeshellarg($name)], [
+    $this->drush()->drush('user:create', [escapeshellarg($name)], [
       'mail' => escapeshellarg($name . '@example.com'),
       'password' => escapeshellarg(bin2hex(random_bytes(16))),
     ]);
     $this->createdUsers[] = $name;
     if (!in_array(strtolower($role), ['authenticated', 'authenticated user'], TRUE)) {
-      $drush->drush('user:role:add', [escapeshellarg($role), escapeshellarg($name)]);
+      $this->drush()->drush('user:role:add', [escapeshellarg($role), escapeshellarg($name)]);
     }
 
     $this->loginWithOneTimeLink(['name' => escapeshellarg($name)]);
@@ -69,10 +69,11 @@ class FeatureContext extends RawDrupalContext {
    *   The user:login option naming the account: name or uid.
    */
   protected function loginWithOneTimeLink(array $who): void {
-    $link = trim($this->getDriver('drush')->drush('user:login', [], $who + ['no-browser' => NULL]));
+    $link = trim($this->drush()->drush('user:login', [], $who + ['no-browser' => NULL]));
     $path = parse_url((string) strtok($link, "\n"), PHP_URL_PATH);
     if (!is_string($path) || !str_contains($path, '/user/reset/')) {
-      throw new \RuntimeException(sprintf('drush user:login returned no login link for %s: %s', (string) reset($who), $link));
+      throw new \RuntimeException(sprintf(
+        'drush user:login returned no login link for %s: %s', (string) reset($who), $link));
     }
     $this->visitPath($path);
   }
@@ -85,7 +86,8 @@ class FeatureContext extends RawDrupalContext {
   public function deleteCreatedUsers(): void {
     foreach ($this->createdUsers as $name) {
       try {
-        $this->getDriver('drush')->drush('user:cancel', [escapeshellarg($name)], ['delete-content' => NULL, 'yes' => NULL]);
+        $options = ['delete-content' => NULL, 'yes' => NULL];
+        $this->drush()->drush('user:cancel', [escapeshellarg($name)], $options);
       }
       catch (\Throwable) {
         // A user left behind is untidy, not a test failure.
@@ -116,7 +118,8 @@ class FeatureContext extends RawDrupalContext {
       mkdir($dir, 0777, TRUE);
     }
     $name = preg_replace('/[^a-zA-Z0-9]+/', '_', $scope->getFeature()->getTitle() ?? 'feature');
-    file_put_contents(sprintf('%s/%s_line%d.png', $dir, $name, $scope->getStep()->getLine()), $screenshot);
+    $file = sprintf('%s/%s_line%d.png', $dir, $name, $scope->getStep()->getLine());
+    file_put_contents($file, $screenshot);
   }
 
   /**
@@ -135,7 +138,8 @@ class FeatureContext extends RawDrupalContext {
       return;
     }
     if (($headers['cf-mitigated'][0] ?? '') === 'challenge') {
-      throw new \RuntimeException('The CDN answered this request with a bot challenge, so the test never reached Drupal. Send the site\'s bot-bypass token (x-pantheon-bot-bypass).');
+      throw new \RuntimeException('The CDN answered this request with a bot challenge, so the '
+        . "test never reached Drupal. Send the site's bot-bypass token (x-pantheon-bot-bypass).");
     }
   }
 
@@ -162,7 +166,8 @@ class FeatureContext extends RawDrupalContext {
           $ids = $storage->getQuery()->accessCheck(FALSE)->condition($key, $bundle)
             ->condition('status', 1)->sort('changed', 'DESC')->range(0, 1)->execute();
           if ($ids) {
-            $out[] = ['label' => "$type:$bundle", 'path' => $storage->load(reset($ids))->toUrl()->toString()];
+            $path = $storage->load(reset($ids))->toUrl()->toString();
+            $out[] = ['label' => "$type:$bundle", 'path' => $path];
           }
         }
       }
@@ -174,15 +179,12 @@ class FeatureContext extends RawDrupalContext {
     }
     $failed = [];
     foreach ($pages as $page) {
-      $this->visitPath($page['path']);
-      $code = $this->getSession()->getStatusCode();
+      $code = $this->statusOf($page['path']);
       if ($code >= 500) {
         $failed[] = sprintf('%s (%s) returned %d', $page['path'], $page['label'], $code);
       }
     }
-    if ($failed) {
-      throw new \RuntimeException("These pages fail to render:\n- " . implode("\n- ", $failed));
-    }
+    $this->failOn($failed, 'These pages fail to render');
     printf('%d pages checked, one per content type and vocabulary.', count($pages));
   }
 
@@ -199,15 +201,12 @@ class FeatureContext extends RawDrupalContext {
       PHP);
     $failed = [];
     foreach (array_slice($types, 0, 30) as $type) {
-      $this->visitPath('/node/add/' . $type);
-      $code = $this->getSession()->getStatusCode();
+      $code = $this->statusOf('/node/add/' . $type);
       if ($code !== 200) {
         $failed[] = sprintf('/node/add/%s returned %d', $type, $code);
       }
     }
-    if ($failed) {
-      throw new \RuntimeException("These add forms fail to load:\n- " . implode("\n- ", $failed));
-    }
+    $this->failOn($failed, 'These add forms fail to load');
     printf('%d add forms checked.', count($types));
   }
 
@@ -224,7 +223,8 @@ class FeatureContext extends RawDrupalContext {
     $session = $this->getSession();
     $host = parse_url($session->getCurrentUrl(), PHP_URL_HOST);
     $assets = [];
-    foreach ($session->getPage()->findAll('css', 'link[rel="stylesheet"][href], script[src]') as $element) {
+    $elements = $session->getPage()->findAll('css', 'link[rel="stylesheet"][href], script[src]');
+    foreach ($elements as $element) {
       $url = (string) ($element->getAttribute('href') ?? $element->getAttribute('src'));
       if (str_starts_with($url, '//')) {
         $url = 'https:' . $url;
@@ -237,12 +237,12 @@ class FeatureContext extends RawDrupalContext {
         continue;
       }
       $path = $parts['path'] . (isset($parts['query']) ? '?' . $parts['query'] : '');
-      $assets[$path] = str_ends_with($parts['path'], '.css') || $element->getTagName() === 'link' ? 'css' : 'javascript';
+      $css = str_ends_with($parts['path'], '.css') || $element->getTagName() === 'link';
+      $assets[$path] = $css ? 'css' : 'javascript';
     }
     $failed = [];
     foreach (array_slice($assets, 0, 40, TRUE) as $path => $kind) {
-      $this->visitPath($path);
-      $code = $session->getStatusCode();
+      $code = $this->statusOf($path);
       $type = strtolower((string) ($session->getResponseHeader('Content-Type') ?? ''));
       if ($code !== 200) {
         $failed[] = sprintf('%s returned %d', $path, $code);
@@ -251,9 +251,7 @@ class FeatureContext extends RawDrupalContext {
         $failed[] = sprintf('%s came back as %s, not %s', $path, $type ?: 'no content type', $kind);
       }
     }
-    if ($failed) {
-      throw new \RuntimeException("These stylesheets or scripts fail to load:\n- " . implode("\n- ", $failed));
-    }
+    $this->failOn($failed, 'These stylesheets or scripts fail to load');
     printf('%d stylesheets and scripts checked.', count($assets));
   }
 
@@ -270,16 +268,17 @@ class FeatureContext extends RawDrupalContext {
     }
     $csp = strtolower(implode(' ', $headers['content-security-policy'] ?? []));
     if (empty($headers['x-frame-options']) && !str_contains($csp, 'frame-ancestors')) {
-      $problems[] = 'Neither X-Frame-Options nor a CSP frame-ancestors rule is set, so other sites can frame this one.';
+      $problems[] = 'Neither X-Frame-Options nor a CSP frame-ancestors rule is set, so other '
+        . 'sites can frame this one.';
     }
-    foreach (['x-drupal-cache-tags', 'x-drupal-cache-contexts', 'x-drupal-cache-max-age'] as $debug) {
+    $debugHeaders = ['x-drupal-cache-tags', 'x-drupal-cache-contexts', 'x-drupal-cache-max-age'];
+    foreach ($debugHeaders as $debug) {
       if (isset($headers[$debug])) {
-        $problems[] = sprintf('The debug header %s is sent: http.response.debug_cacheability_headers is on in services.yml.', $debug);
+        $problems[] = sprintf('The debug header %s is sent: '
+          . 'http.response.debug_cacheability_headers is on in services.yml.', $debug);
       }
     }
-    if ($problems) {
-      throw new \RuntimeException(implode("\n", $problems));
-    }
+    $this->failOn($problems);
   }
 
   /**
@@ -296,17 +295,19 @@ class FeatureContext extends RawDrupalContext {
     preg_match('/max-age=(\d+)/', $cacheControl, $match);
     $problems = [];
     if (!str_contains($cacheControl, 'public') || (int) ($match[1] ?? 0) === 0) {
-      $problems[] = sprintf('Cache-Control is "%s". Set "Browser and proxy cache maximum age" at /admin/config/development/performance; Pantheon recommends at least 15 minutes.', $cacheControl ?: 'missing');
+      $problems[] = sprintf('Cache-Control is "%s". Set "Browser and proxy cache maximum age" at '
+        . '/admin/config/development/performance; Pantheon recommends at least 15 minutes.',
+        $cacheControl ?: 'missing');
     }
-    foreach (array_change_key_case($session->getResponseHeaders())['set-cookie'] ?? [] as $cookie) {
+    $cookies = array_change_key_case($session->getResponseHeaders())['set-cookie'] ?? [];
+    foreach ($cookies as $cookie) {
       if (preg_match('/^S?SESS[a-z0-9]+=/i', $cookie)) {
-        $problems[] = 'The page starts a session for an anonymous visitor, so it cannot be cached. Something stores data in the session before login.';
+        $problems[] = 'The page starts a session for an anonymous visitor, so it cannot be cached. '
+          . 'Something stores data in the session before login.';
         break;
       }
     }
-    if ($problems) {
-      throw new \RuntimeException(implode("\n", $problems));
-    }
+    $this->failOn($problems);
   }
 
   /**
@@ -315,14 +316,16 @@ class FeatureContext extends RawDrupalContext {
    * @Then registration matches the site's setting
    */
   public function assertRegistrationMatchesSetting(): void {
-    $setting = (string) $this->drupalJson("return \\Drupal::config('user.settings')->get('register');");
-    $this->visitPath('/user/register');
-    $code = $this->getSession()->getStatusCode();
+    $setting = (string) $this->drupalJson(
+      "return \\Drupal::config('user.settings')->get('register');");
+    $code = $this->statusOf('/user/register');
     if ($setting === 'admin_only' && $code !== 403) {
-      throw new \RuntimeException(sprintf('Only administrators may create accounts on this site, but /user/register returned %d to a visitor.', $code));
+      throw new \RuntimeException(sprintf('Only administrators may create accounts on this site, '
+        . 'but /user/register returned %d to a visitor.', $code));
     }
     if ($setting !== 'admin_only' && $code !== 200) {
-      throw new \RuntimeException(sprintf('Visitors may register on this site (%s), but /user/register returned %d.', $setting, $code));
+      throw new \RuntimeException(sprintf('Visitors may register on this site (%s), '
+        . 'but /user/register returned %d.', $setting, $code));
     }
   }
 
@@ -340,7 +343,9 @@ class FeatureContext extends RawDrupalContext {
     $problems = $this->drupalJson(<<<'PHP'
       $out = [];
       $all = \Drupal::service('user.permissions')->getPermissions();
-      $checked = \Drupal::config('user.settings')->get('register') === 'admin_only' ? ['anonymous'] : ['anonymous', 'authenticated'];
+      $checked = \Drupal::config('user.settings')->get('register') === 'admin_only'
+        ? ['anonymous']
+        : ['anonymous', 'authenticated'];
       $roles = \Drupal::entityTypeManager()->getStorage('user_role')->loadMultiple($checked);
       foreach ($roles as $role) {
         if ($role->isAdmin()) {
@@ -349,7 +354,8 @@ class FeatureContext extends RawDrupalContext {
         }
         foreach ($role->getPermissions() as $permission) {
           if (!empty($all[$permission]['restrict access'])) {
-            $out[] = sprintf('The %s role has "%s", a restricted permission.', $role->id(), $permission);
+            $out[] = sprintf('The %s role has "%s", a restricted permission.',
+              $role->id(), $permission);
           }
         }
       }
@@ -365,15 +371,14 @@ class FeatureContext extends RawDrupalContext {
             $safe = $safe || ($filters->has($id) && $filters->get($id)->status);
           }
           if (!$safe) {
-            $out[] = sprintf('The %s role can use the "%s" text format, which does not filter HTML.', implode(' and ', $granted), $format->label());
+            $out[] = sprintf('The %s role can use the "%s" text format, which does not '
+              . 'filter HTML.', implode(' and ', $granted), $format->label());
           }
         }
       }
       return $out;
       PHP);
-    if ($problems) {
-      throw new \RuntimeException(implode("\n", $problems));
-    }
+    $this->failOn($problems);
   }
 
   /**
@@ -399,16 +404,15 @@ class FeatureContext extends RawDrupalContext {
     }
     $failed = [];
     foreach ($forms as $form) {
-      $this->visitPath($form['path']);
-      $code = $this->getSession()->getStatusCode();
-      $button = $this->getSession()->getPage()->find('css', 'form.webform-submission-form [type="submit"]');
+      $code = $this->statusOf($form['path']);
+      $page = $this->getSession()->getPage();
+      $button = $page->find('css', 'form.webform-submission-form [type="submit"]');
       if ($code !== 200 || $button === NULL) {
-        $failed[] = sprintf('%s (%s) returned %d%s', $form['path'], $form['label'], $code, $button === NULL ? ' without a submit button' : '');
+        $failed[] = sprintf('%s (%s) returned %d%s', $form['path'], $form['label'], $code,
+          $button === NULL ? ' without a submit button' : '');
       }
     }
-    if ($failed) {
-      throw new \RuntimeException("These webforms fail to load:\n- " . implode("\n- ", $failed));
-    }
+    $this->failOn($failed, 'These webforms fail to load');
     printf('%d webforms checked.', count($forms));
   }
 
@@ -430,8 +434,7 @@ class FeatureContext extends RawDrupalContext {
       print 'Core search has no active search page.';
       return;
     }
-    $this->visitPath($path . '?keys=drupal');
-    $code = $this->getSession()->getStatusCode();
+    $code = $this->statusOf($path . '?keys=drupal');
     if ($code !== 200) {
       throw new \RuntimeException(sprintf('%s?keys=drupal returned %d.', $path, $code));
     }
@@ -445,7 +448,8 @@ class FeatureContext extends RawDrupalContext {
   public function assertResponseIsSitemap(): void {
     $content = $this->getSession()->getPage()->getContent();
     if (!str_contains($content, '<urlset') && !str_contains($content, '<sitemapindex')) {
-      throw new \RuntimeException('The response is not an XML sitemap: it has no <urlset> or <sitemapindex>.');
+      throw new \RuntimeException(
+        'The response is not an XML sitemap: it has no <urlset> or <sitemapindex>.');
     }
   }
 
@@ -462,7 +466,8 @@ class FeatureContext extends RawDrupalContext {
     }
     $count = count($page->findAll('css', 'head link[rel="canonical"]'));
     if ($count !== 1) {
-      throw new \RuntimeException(sprintf('The page has %d canonical links; it should have exactly one.', $count));
+      throw new \RuntimeException(
+        sprintf('The page has %d canonical links; it should have exactly one.', $count));
     }
   }
 
@@ -495,13 +500,51 @@ class FeatureContext extends RawDrupalContext {
    * way through the shell and SSH; the result comes back as marked JSON.
    */
   protected function drupalJson(string $php): mixed {
-    $wrapped = sprintf('echo "\nDRUPAL-QA-JSON:" . json_encode((function () { %s })()) . "\n";', $php);
+    $wrapped = sprintf(
+      'echo "\nDRUPAL-QA-JSON:" . json_encode((function () { %s })()) . "\n";', $php);
     $code = sprintf("eval(base64_decode('%s'));", base64_encode($wrapped));
-    $output = (string) $this->getDriver('drush')->drush('php:eval', [escapeshellarg($code)]);
+    $output = (string) $this->drush()->drush('php:eval', [escapeshellarg($code)]);
     if (!preg_match('/^DRUPAL-QA-JSON:(.*)$/m', $output, $match)) {
       throw new \RuntimeException("Drush returned no result. Its output:\n" . $output);
     }
     return json_decode($match[1], TRUE, 512, JSON_THROW_ON_ERROR);
+  }
+
+  /**
+   * The Drush driver, which reaches the site under test over SSH.
+   */
+  protected function drush(): DrushDriver {
+    $driver = $this->getDriver('drush');
+    if (!$driver instanceof DrushDriver) {
+      throw new \LogicException(
+        "drupal-qa needs the Drupal Extension's Drush driver (api_driver: drush).");
+    }
+    return $driver;
+  }
+
+  /**
+   * Visits a path and returns its HTTP status code.
+   */
+  protected function statusOf(string $path): int {
+    $this->visitPath($path);
+    return $this->getSession()->getStatusCode();
+  }
+
+  /**
+   * Fails the step with every problem found, if there are any.
+   *
+   * @param string[] $problems
+   *   One line each.
+   * @param string $heading
+   *   Introduces them as a list; without one they're given as they are.
+   */
+  protected function failOn(array $problems, string $heading = ''): void {
+    if (!$problems) {
+      return;
+    }
+    throw new \RuntimeException($heading === ''
+      ? implode("\n", $problems)
+      : $heading . ":\n- " . implode("\n- ", $problems));
   }
 
   /**
@@ -511,7 +554,8 @@ class FeatureContext extends RawDrupalContext {
    */
   public function assertElementExists(string $selector): void {
     if ($this->getSession()->getPage()->find('css', $selector) === NULL) {
-      throw new ElementNotFoundException($this->getSession()->getDriver(), 'element', 'css', $selector);
+      $driver = $this->getSession()->getDriver();
+      throw new ElementNotFoundException($driver, 'element', 'css', $selector);
     }
   }
 
@@ -522,7 +566,8 @@ class FeatureContext extends RawDrupalContext {
    */
   public function assertElementNotExists(string $selector): void {
     if ($this->getSession()->getPage()->find('css', $selector) !== NULL) {
-      throw new \RuntimeException(sprintf('Element "%s" was found but should not exist.', $selector));
+      throw new \RuntimeException(
+        sprintf('Element "%s" was found but should not exist.', $selector));
     }
   }
 

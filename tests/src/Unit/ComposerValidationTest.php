@@ -2,6 +2,7 @@
 
 namespace DrupalQa\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -9,6 +10,7 @@ use PHPUnit\Framework\TestCase;
  *
  * @group drupal_qa
  */
+#[Group('drupal_qa')]
 class ComposerValidationTest extends TestCase {
 
   /**
@@ -23,7 +25,7 @@ class ComposerValidationTest extends TestCase {
    */
   protected function setUp(): void {
     parent::setUp();
-    // Walk up from vendor/thronedigital/drupal-qa/tests/src/Unit to project root.
+    // From vendor/thronedigital/drupal-qa/tests/src/Unit up to the project.
     $this->projectRoot = realpath(__DIR__ . '/../../../../../../') ?: getcwd();
   }
 
@@ -31,16 +33,12 @@ class ComposerValidationTest extends TestCase {
    * Tests that composer.json exists and is valid JSON.
    */
   public function testComposerJsonExists(): void {
-    $path = $this->projectRoot . '/composer.json';
-    $this->assertFileExists($path, 'composer.json should exist in the project root.');
-    $contents = file_get_contents($path);
-    $this->assertNotFalse($contents);
-    $decoded = json_decode($contents, TRUE);
-    $this->assertNotNull($decoded, 'composer.json should be valid JSON.');
+    $this->assertFileExists($this->projectRoot . '/composer.json', 'composer.json should exist in the project root.');
+    $this->assertNotNull($this->composerJson(), 'composer.json should be valid JSON.');
   }
 
   /**
-   * Tests that composer.lock exists and is in sync.
+   * Tests that composer.lock exists.
    */
   public function testComposerLockExists(): void {
     $path = $this->projectRoot . '/composer.lock';
@@ -51,10 +49,8 @@ class ComposerValidationTest extends TestCase {
    * Tests that no dev debug packages are in production require.
    */
   public function testNoDebugPackagesInRequire(): void {
-    $path = $this->projectRoot . '/composer.json';
-    $contents = file_get_contents($path);
-    $this->assertNotFalse($contents);
-    $composer = json_decode($contents, TRUE);
+    $composer = $this->composerJson();
+    $this->assertIsArray($composer, 'composer.json should be valid JSON.');
     $require = $composer['require'] ?? [];
 
     $debugPackages = ['kint-php/kint', 'symfony/var-dumper'];
@@ -70,33 +66,44 @@ class ComposerValidationTest extends TestCase {
         fwrite(STDERR, 'drupal-qa: ' . $message . PHP_EOL);
       }
     }
-    // Always pass — this is advisory.
-    $this->assertTrue(TRUE);
   }
 
   /**
    * Tests that all local patches referenced in composer.json exist.
    */
   public function testLocalPatchFilesExist(): void {
-    $path = $this->projectRoot . '/composer.json';
-    $contents = file_get_contents($path);
-    $this->assertNotFalse($contents);
-    $composer = json_decode($contents, TRUE);
+    $composer = $this->composerJson();
+    $this->assertIsArray($composer, 'composer.json should be valid JSON.');
     $patches = $composer['extra']['patches'] ?? [];
 
     foreach ($patches as $package => $packagePatches) {
-      foreach ($packagePatches as $description => $patchPath) {
+      foreach ($packagePatches as $key => $patch) {
+        // composer-patches 1 maps a description to a path; 2 also takes an
+        // object with a description and a url.
+        $path = (string) (is_array($patch) ? ($patch['url'] ?? '') : $patch);
+        $description = (string) (is_array($patch) ? ($patch['description'] ?? $key) : $key);
         // Only check local patches, not URLs.
-        if (str_starts_with($patchPath, 'http://') || str_starts_with($patchPath, 'https://')) {
+        if ($path === '' || preg_match('#^https?://#', $path)) {
           continue;
         }
-        $fullPath = $this->projectRoot . '/' . $patchPath;
         $this->assertFileExists(
-          $fullPath,
-          sprintf('Local patch "%s" for %s does not exist at %s', $description, $package, $patchPath)
+          $this->projectRoot . '/' . $path,
+          sprintf('Local patch "%s" for %s does not exist at %s', $description, $package, $path)
         );
       }
     }
+  }
+
+  /**
+   * The project's composer.json, decoded.
+   *
+   * @return array<string, mixed>|null
+   *   NULL when the file is missing or isn't valid JSON.
+   */
+  protected function composerJson(): ?array {
+    $contents = @file_get_contents($this->projectRoot . '/composer.json');
+    $decoded = $contents === FALSE ? NULL : json_decode($contents, TRUE);
+    return is_array($decoded) ? $decoded : NULL;
   }
 
 }
