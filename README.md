@@ -1,33 +1,72 @@
 # drupal-qa
 
-CI for Drupal sites on Pantheon. Every pull request gets code checks and its own
-multidev; every merge deploys to dev. Each deploy then waits until Pantheon is
-actually serving the new code before it runs database updates, imports config and
-smoke-tests the site.
+**Every pull request on your Pantheon Drupal site gets its own copy of the site,
+checked, deployed and smoke-tested, with the results posted right on the pull
+request. Merging deploys to dev the same way.**
 
+You add one Composer package, one workflow file and two secrets. Nothing blocks a
+merge until you say so.
+
+![The comment drupal-qa posts on a pull request: a link to the pull request's own Pantheon environment and a result for every step](docs/images/run-pr-comment.png)
+
+- [What it does](#what-it-does)
 - [Install](#install)
-- [What runs](#what-runs)
+- [Getting the two secrets](#getting-the-two-secrets)
+- [Adopting a site whose code is only on Pantheon](#adopting-a-site-whose-code-is-only-on-pantheon)
+- [What's included](#whats-included)
 - [Options](#options)
-- [Install with Claude Code](#install-with-claude-code)
-- [Pantheon's GitHub integration and drupal-qa](#pantheons-github-integration-and-drupal-qa)
-- [Writing your own Behat tests](#writing-your-own-behat-tests)
+- [Writing your own tests](#writing-your-own-tests)
 - [Troubleshooting](#troubleshooting)
+- [Pantheon's GitHub integration and drupal-qa](#pantheons-github-integration-and-drupal-qa)
 - [Upgrading from v1](#upgrading-from-v1)
+- [Releasing](#releasing)
+
+## What it does
+
+| When | What happens |
+|---|---|
+| **You open or push to a pull request** | Code checks and PHPUnit run. The code goes to a Pantheon multidev named `pr-<number>`, made from live the first time (from dev if the site has no live yet). drupal-qa waits until Pantheon is really serving the new code, then runs database updates and config import, checks that config matches, and runs the smoke tests against that environment. The results land on the pull request as a comment. |
+| **You merge** | The same steps, against `dev`. |
+| **You close the pull request** | Its multidev is deleted. |
+
+![The run in GitHub Actions: plan, code checks and PHPUnit, deploy, Behat, summary, and the multidev clean-up that runs when the pull request closes](docs/images/run-actions-graph.png)
+
+A few things it guarantees, because they are where CI usually lies:
+
+- **Nothing reports green without running.** A step that crashes or runs zero
+  tests fails. A check that only warns still shows ⚠️; it never shows as passed.
+- **It doesn't race Pantheon.** Pantheon reports a deploy as done before the
+  environment serves the new files. drupal-qa picks a file the commit changed and
+  waits until the environment serves that exact file. Only then does it touch the
+  database.
+- **Builds queue; they never cancel.** Cancelling a multidev part way through
+  leaves a broken environment Pantheon can't roll back, so a new push waits for
+  the build that is already running.
+- **Pantheon's bot protection doesn't fake a result.** Pantheon's CDN challenges
+  automated visitors with a 403 that looks exactly like Drupal saying "access
+  denied". drupal-qa sends the site's bot-bypass token with every test request,
+  and a challenged request fails the run instead of passing a test.
 
 ## Install
 
-**1. Add the package:**
+You need a Drupal 10 or 11 site on Pantheon with its code on GitHub, and Composer.
+Multidev needs a Gold workspace or higher; without it, set `multidev: false` and
+pull requests get the checks without an environment. If the site's code is only
+in Pantheon's own git so far, start with
+[Adopting a site whose code is only on Pantheon](#adopting-a-site-whose-code-is-only-on-pantheon).
+
+**1. Add the package.**
 
 ```bash
 composer require --dev thronedigital/drupal-qa
 ```
 
-It brings PHPCS (Drupal standard), PHPStan with `phpstan-drupal`, PHPUnit and
-Behat. You don't need to copy any config into the project. When the project has
-its own `phpunit.xml`, `phpstan.neon` or `behat.yml`, CI uses that. Otherwise it
-uses the package's defaults.
+That brings PHPCS with the Drupal standard, PHPStan with `phpstan-drupal`, PHPUnit
+and Behat. Nothing is copied into your project. When the project has its own
+`phpunit.xml`, `phpstan.neon` or `behat.yml`, CI uses it; otherwise it uses the
+package's.
 
-**2. Commit `.github/workflows/drupal-qa.yml`:**
+**2. Add `.github/workflows/drupal-qa.yml`.**
 
 ```yaml
 name: Drupal QA
@@ -48,54 +87,197 @@ jobs:
       PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
 ```
 
-**3. Add two secrets** under *Settings → Secrets and variables → Actions*. If you
-add them once at organization level, every repository in the org can use them.
+Change two things:
 
-| Secret | What it is |
+- `my-site` to the site's Pantheon machine name. `terminus site:list` shows it.
+- `main` to your default branch, if it's called something else. A repository
+  cloned from Pantheon starts on `master`.
+
+**3. Add two secrets** to the repository. [Getting the two secrets](#getting-the-two-secrets)
+shows where each one comes from.
+
+**4. Open a pull request.** Commit the two files on a branch, push it and open a
+pull request. The first run takes ten minutes or so, most of it Pantheon creating
+the multidev. Later pushes to the same pull request are quicker.
+
+![A pull request's checks: each drupal-qa job is its own check, the multidev clean-up waits for the pull request to close, and merging deploys to dev](docs/images/run-pr-checks.png)
+
+On Pantheon, the multidev appears on its own:
+
+![Pantheon's Multidev page with the pr-3 environment drupal-qa created for pull request 3](docs/images/run-pantheon-multidev.png)
+
+## Getting the two secrets
+
+drupal-qa logs in to Pantheon as you: Terminus with a token, git with an SSH key.
+Both secrets act as your Pantheon account, so add them only to repositories you
+trust.
+
+### `PANTHEON_MACHINE_TOKEN`
+
+In the Pantheon dashboard, open your avatar menu, choose **User settings**, then
+**Personal Access Tokens**, and press **Add token**. Name it after the repository
+and copy the token; Pantheon shows it only once.
+
+![Pantheon's User settings, Personal Access Tokens tab, with the Add token button highlighted](docs/images/setup-pantheon-token.png)
+
+New tokens expire after 90 days. When one does, every run fails at "Log in to
+Pantheon"; make a new token and replace the secret. Tokens made before September
+2026 (Pantheon called them machine tokens) don't expire.
+
+### `PANTHEON_SSH_KEY`
+
+Make a key pair just for this. It has to be RSA, because Terminus refuses ed25519
+keys:
+
+```bash
+ssh-keygen -t rsa -b 4096 -m PEM -N "" -C "drupal-qa" -f ~/.ssh/drupal_qa
+```
+
+That writes the private half to `~/.ssh/drupal_qa` and the public half to
+`~/.ssh/drupal_qa.pub`. Give Pantheon the **public** half: **User settings**, then
+**SSH Keys**, then **Add New Key**, and paste the contents of
+`~/.ssh/drupal_qa.pub`.
+
+![Pantheon's User settings, SSH Keys tab, with the Add New Key button highlighted](docs/images/setup-pantheon-ssh-key.png)
+
+### Adding them to GitHub
+
+In the repository, open **Settings**, then **Secrets and variables**, then
+**Actions**, and press **New repository secret**.
+
+![GitHub's Actions secrets page for a repository, with Settings, Secrets and variables, Actions and New repository secret highlighted](docs/images/setup-github-secrets.png)
+
+Add `PANTHEON_MACHINE_TOKEN` with the token as its value, then
+`PANTHEON_SSH_KEY` with the whole **private** key file, from
+`-----BEGIN RSA PRIVATE KEY-----` to the end.
+
+![GitHub's New secret form with the name PANTHEON_MACHINE_TOKEN filled in](docs/images/setup-github-new-secret.png)
+
+Or from a terminal in the repository, with the [GitHub CLI](https://cli.github.com/):
+
+```bash
+gh secret set PANTHEON_MACHINE_TOKEN      # paste the token when it asks
+gh secret set PANTHEON_SSH_KEY < ~/.ssh/drupal_qa
+```
+
+To set them once for every repository in a GitHub organization, use
+**Organization settings** instead, or add `--org <org> --visibility all` to those
+commands.
+
+## Adopting a site whose code is only on Pantheon
+
+Plenty of sites have never had a GitHub repository: their code lives in Pantheon's
+git and nowhere else. Bringing one over is a handful of commands, and Pantheon
+keeps working exactly as before.
+
+```bash
+# 1. Pull the code down from Pantheon. It lands in ~/pantheon-local-copies/my-site.
+terminus local:clone my-site
+cd ~/pantheon-local-copies/my-site
+
+# 2. Install it, then add drupal-qa.
+composer install
+composer require --dev thronedigital/drupal-qa
+
+# 3. Add the workflow, from this repository's example.
+mkdir -p .github/workflows
+curl -fsSL https://raw.githubusercontent.com/DanePete/drupal-qa/main/examples/drupal-qa.yml \
+  -o .github/workflows/drupal-qa.yml
+```
+
+In `.github/workflows/drupal-qa.yml`, set `pantheon_site: my-site` and change
+`branches: [main]` to `branches: [master]`, because Pantheon's branch is `master`.
+
+```bash
+# 4. Make the GitHub repository and push to it.
+gh repo create my-org/my-site --private --source . --remote github --push
+
+# 5. Add the two secrets (see "Getting the two secrets").
+gh secret set PANTHEON_MACHINE_TOKEN
+gh secret set PANTHEON_SSH_KEY < ~/.ssh/drupal_qa
+
+# 6. Commit drupal-qa on a branch and open a pull request.
+git checkout -b chore/drupal-qa
+git add composer.json composer.lock .github/workflows/drupal-qa.yml
+git commit -m "chore: add drupal-qa"
+git push -u github chore/drupal-qa
+gh pr create --fill
+```
+
+From then on, GitHub is where code changes start. drupal-qa pushes each merge to
+Pantheon's `master`, which is what dev runs.
+
+Two things to know:
+
+- **Commits made on Pantheon stop a deploy.** A one-click update in the dashboard
+  or an Autopilot update adds a commit to Pantheon's `master` that GitHub doesn't
+  have. drupal-qa won't push over it; merge it into GitHub first (see
+  [Troubleshooting](#troubleshooting)).
+- **Leave SFTP mode off.** Code changed on the server in SFTP mode isn't in git,
+  so the next deploy overwrites it.
+
+## What's included
+
+### Checks on every pull request
+
+| Check | What it catches | By default |
+|---|---|---|
+| **PHPCS** | Drupal coding standard, in custom modules, profiles and every theme that isn't contrib | warns |
+| **PHPStan** | Bugs found by static analysis, with `phpstan-drupal`, level 1 | warns |
+| **YAML lint** | Syntax errors and duplicate keys in config, which stop an import | warns |
+| **Composer audit** | Dependencies with known security advisories | warns |
+| **Secret scan** | Passwords and keys committed by mistake ([gitleaks](https://github.com/gitleaks/gitleaks), on the pull request's own commits) | warns |
+| **PHPUnit** | Your unit and kernel tests, plus the package's own checks below | **blocks** |
+
+### After every deploy
+
+| Step | What it does | By default |
+|---|---|---|
+| **Serving this commit** | Waits until the environment serves a file from this exact commit | always runs |
+| **Database updates** | `drush updatedb` | **blocks** |
+| **Config import** | `drush config:import` | **blocks** |
+| **Config status** | Confirms config on the environment now matches the code | warns |
+| **Behat** | The smoke tests below, against the environment's real URL | warns |
+
+To make a warning block, list it under `required` ([Options](#options)).
+
+### PHPUnit tests that come with it
+
+These run with your own tests on every pull request. There is nothing to set up.
+
+| Test | Checks that |
 |---|---|
-| `PANTHEON_MACHINE_TOKEN` | Pantheon dashboard → your account → *Machine Tokens*. |
-| `PANTHEON_SSH_KEY` | The private half of a key on a Pantheon account that can reach the site. Make it RSA (`ssh-keygen -t rsa -b 4096 -m PEM`), because Terminus refuses ed25519 keys. |
+| `ComposerValidationTest` | `composer.json` exists and is valid JSON |
+| | `composer.lock` exists |
+| | debug packages such as kint or var-dumper aren't in `require` (a note only, never a failure) |
+| | every local patch file listed under `extra.patches` exists |
+| `ModuleInfoTest` | every custom module's `.info.yml` is valid YAML |
+| | each one has `name`, `type` and `core_version_requirement` |
+| | none still uses the retired `core:` key |
+| `DrupalBootstrapTest` | Drupal's unit test base class, autoloader and string translation load |
 
-The workflow passes the two secrets by name because `secrets: inherit` doesn't
-reach a workflow in another account or organization.
+### Behat smoke tests that come with it
 
-That's the whole install. Open a pull request to see it run.
+These run against the deployed environment, logged out unless a scenario says
+otherwise. Logged-in scenarios create a throwaway user through Drush and delete it
+afterwards.
 
-## What runs
-
-| When | What happens |
+| Feature | Scenarios |
 |---|---|
-| A pull request is opened or pushed | Code checks and PHPUnit run first. The code then goes to multidev `pr-N`, created from live the first time. drupal-qa waits until `pr-N` is serving the new code, then runs `updatedb`, `config:import` and `cache:rebuild`, checks `config:status` and runs Behat. The PR gets a comment with the URL and a results table. |
-| The default branch is pushed (a merge) | The same steps, against `dev`. |
-| A pull request is closed | `pr-N` is deleted. |
+| **Pages load** | The front page returns 200. A missing page returns a real 404. |
+| **Logging in** | The login form loads. Anonymous visitors get 403 at `/admin`. A logged-in user reaches `/user`. |
+| **Access control** | Anonymous visitors get 403 at `/admin/structure`, `/admin/config` and `/admin/people`. An administrator reaches `/admin`. |
+| **Shopping cart** | Runs only when `drupal/commerce` is installed. Visitors can open `/cart`; a new customer sees an empty cart. |
 
-**What it checks:** PHPCS on your custom modules, profiles and every non-contrib
-theme; PHPStan; yamllint on the config sync directory (syntax errors and duplicate keys, which stop an import); `composer audit`; a
-[gitleaks](https://github.com/gitleaks/gitleaks) scan of the commits the change
-adds; PHPUnit (unit, kernel and the package's own smoke tests); and Behat against
-the deployed environment.
+### Default configs
 
-Some things it guarantees:
-
-- **Nothing reports green without running.** A step that crashes or runs zero tests
-  counts as failed. A check that only warns still shows ⚠️ in the run summary and
-  in an annotation; it never shows as a pass.
-- **It doesn't race Pantheon.** Pantheon's code log and workflow status both say a
-  deploy is done before the container serves the new files. So drupal-qa picks a
-  file the commit changed and polls its hash on the environment until it matches.
-  Only then does it run `updatedb` and `config:import`.
-- **Multidev builds queue; they never cancel.** Cancelling `multidev:create` part
-  way through leaves a half-built environment that Pantheon can't roll back. A new
-  push waits for the build already running, and so does closing the PR.
-- **Pantheon's bot protection doesn't break the smoke tests.** Pantheon's
-  next-generation CDN challenges automated traffic. That challenge is a 403 that
-  looks exactly like Drupal denying access. CI fetches the site's bot-bypass token
-  with the machine token it already has, and sends it on every Behat request. If a
-  request is challenged anyway, the step fails instead of passing.
+When the project has none of its own, CI uses the package's
+`config/phpunit.xml.dist`, `config/phpstan.neon.dist` and `config/behat.yml.dist`.
+Your own `phpunit.xml`, `phpstan.neon` or `behat.yml` always wins.
 
 ## Options
 
-Every option has a default. Add one only when you want to change it:
+Every option has a default. Add one only to change it:
 
 ```yaml
     with:
@@ -103,7 +285,7 @@ Every option has a default. Add one only when you want to change it:
       required: phpcs phpunit   # these block a merge or deploy instead of warning
       skip: behat               # these don't run at all
       code_host: github-app     # Pantheon's GitHub App deploys this site; see below
-      multidev: false           # the site has no multidev: pull requests get checks only
+      multidev: false           # no multidev: pull requests get checks only
 ```
 
 | Option | Default | Meaning |
@@ -111,246 +293,159 @@ Every option has a default. Add one only when you want to change it:
 | `pantheon_site` | none | The site's machine name. Not needed with `code_host: none`. |
 | `required` | empty | Checks that fail the run instead of warning. |
 | `skip` | empty | Steps that don't run. |
-| `code_host` | `pantheon` | `pantheon`: drupal-qa pushes the code. `github-app`: Pantheon's GitHub App pushes it, and drupal-qa does the rest. `none`: checks only, nothing deployed. |
+| `code_host` | `pantheon` | `pantheon`: drupal-qa pushes the code. `github-app`: Pantheon's GitHub App pushes it and drupal-qa does the rest. `none`: checks only, nothing deployed. |
 | `multidev` | `true` | Multidev needs a Gold workspace or higher. Set `false` below that. |
 
-The names you can use in `required` and `skip` are `phpcs`, `phpstan`, `yamllint`,
-`audit`, `secrets`, `phpunit`, `behat` and `config` (the post-deploy
-`config:status`). `skip` also takes `updatedb` and `cim`.
+`required` and `skip` take `phpcs`, `phpstan`, `yamllint`, `audit`, `secrets`,
+`phpunit`, `behat` and `config`. `skip` also takes `updatedb` and `cim`, which can
+be skipped but never downgraded to a warning: when they run and fail, the site is
+broken.
 
-**Nothing blocks a merge unless you ask it to**, with two exceptions:
+To adopt gradually, start with the defaults, fix what the warnings show, then list
+the clean checks under `required`.
 
-- **PHPUnit blocks by default**, because a failing test means the site is broken.
-- **`updatedb` and `config:import` can be skipped but never downgraded to a
-  warning.** When they run and fail, the environment is broken.
+Everything else is detected, not configured: the PHP version (from
+`composer.json`'s `config.platform.php`, then `pantheon.yml`), which paths to
+check, the config sync directory, whether the site has Commerce, and the site's
+UUID.
 
-To adopt gradually, start with the defaults, fix what the warnings show, and then
-list the clean checks in `required`.
+## Writing your own tests
 
-The rest is detected rather than configured:
+Put `.feature` files in `tests/behat/features/`. They run with the bundled smoke
+tests and can use the Drupal Extension and Mink steps, plus these:
 
-- the PHP version, from `composer.json` `config.platform.php`, then `pantheon.yml`;
-- which paths to check;
-- the config sync directory;
-- whether to run the Commerce smoke tests (yes when `drupal/commerce` is in
-  `composer.lock`);
-- the site's UUID.
-
-## Install with Claude Code
-
-Paste this into Claude Code from the site's repository root. It works out what it
-can from the code, asks only what it can't, and shows you the file before writing
-anything.
-
-```text
-Install thronedigital/drupal-qa (https://github.com/DanePete/drupal-qa) in this
-Drupal project, which is hosted on Pantheon. Read that repository's README first.
-Its "Install" and "Options" sections are the source of truth for the workflow
-file and its inputs.
-
-1. Work out what you can from the code, without asking:
-   - the Pantheon site machine name. Look in .ddev/config.yaml, the git
-     remotes, pantheon.yml, the project README and scripts. Never derive it
-     from the site's display name or the repository name; if it isn't written
-     down anywhere, it's a question for step 3;
-   - whether ddev is used (if so, run composer as `ddev composer`);
-   - the default branch, from `gh repo view --json defaultBranchRef`;
-   - any existing .github/workflows files, especially v1 drupal-qa files
-     (pr-checks.yml, multidev.yml, multidev-cleanup.yml, deploy-pantheon.yml
-     calling DanePete/drupal-qa@v1), or a drupal-qa.yml that's already there
-     (update it; don't add a second);
-   - whether the project already has phpunit.xml, phpstan.neon or behat.yml.
-2. Ask me before running any terminus command. If I agree, run only read-only
-   ones: `terminus site:info <site>` to confirm the site, and
-   `terminus multidev:list <site>` to see whether multidev is available.
-3. Ask me only what you could not settle, in one multiple-choice round, with
-   your recommendation first:
-   - the site machine name, if you didn't find it;
-   - Does Pantheon's GitHub App deploy this site (code_host: github-app), or does
-     its code live in Pantheon's git repository (code_host: pantheon, the usual
-     case)?
-   - Does the site have multidev? Ask only if terminus did not tell you.
-   Don't ask about strictness. The defaults warn and never block, which is the
-   right start.
-4. Create a branch named chore/drupal-qa. Then:
-   - run `composer require --dev thronedigital/drupal-qa`;
-   - write .github/workflows/drupal-qa.yml from the README, with only the inputs
-     that differ from the defaults, and the push trigger set to the default
-     branch;
-   - if v1 drupal-qa is present, remove its four workflow files (the composer
-     require above moves thronedigital/drupal-qa to v2);
-   - show me the workflow file and the composer.json change, list the packages
-     the lock file adds, and wait for my OK before committing.
-5. Check that the secrets PANTHEON_MACHINE_TOKEN and PANTHEON_SSH_KEY exist, with
-   `gh secret list`, and for an organization `gh secret list --org <org>`. Listing
-   org secrets needs org admin; if that fails, tell me the org level wasn't
-   checked. Never ask me to paste a secret into the chat. If one is missing, give
-   me the exact `! gh secret set NAME` command to run myself, and remind me that
-   the SSH key must be RSA.
-6. Commit. Ask me before pushing and opening the pull request. Then watch the
-   run with `gh run watch` and explain its summary table to me, step by step.
-```
-
-## Pantheon's GitHub integration and drupal-qa
-
-Pantheon now offers two ways to get code from GitHub to Pantheon. People reasonably
-ask whether that makes drupal-qa unnecessary. Not quite: Pantheon's tools move
-**code**, while drupal-qa moves code **and checks the result**. The two work
-together.
-
-### What Pantheon shipped
-
-- **The GitHub Application.** Generally available since April 2026 for Gold,
-  Platinum and Diamond workspaces; GitLab support arrived in August. Your GitHub
-  repository *is* the site's repository. Pantheon creates a multidev for each open
-  pull request and deploys the default branch to dev. You configure nothing in
-  Actions and need no secrets. ([docs](https://docs.pantheon.io/guides/external-repositories/github),
-  [announcement](https://docs.pantheon.io/release-notes/2026/04/github-application-ga))
-- **The `push-to-pantheon` GitHub Action.** Pantheon's own action for pushing code
-  to dev and to per-PR multidevs from your workflow. It is labelled *Early Access*,
-  and its README says: "Only teams with pre-existing Continuous Integration
-  pipelines that they could fall back to, should try this repository at this
-  time." ([repository](https://github.com/pantheon-systems/push-to-pantheon))
-
-### What the GitHub App is and isn't
-
-**It is:**
-
-- A connection between a GitHub or GitLab repository and a Pantheon site, so code
-  moves without a CI pipeline.
-- Automatic multidevs for pull requests, and automatic deploys of the default
-  branch to dev.
-- Pantheon running `composer install` (Integrated Composer) on each deploy.
-
-**It isn't:**
-
-- **Available on every plan.** It needs a Gold, Platinum or Diamond workspace.
-- **A switch for an existing site.** It's chosen when a site is created
-  (`terminus site:create … --vcs-provider=github`, or "use an existing
-  repository" for a repository already in Pantheon's layout). Pantheon documents
-  no way to move an existing site's code over. For a site like that, the realistic
-  path is a new site plus a database, files and domain migration. Ask Pantheon
-  support before promising it.
-- **A test runner.** Nothing in it runs PHPCS, PHPStan, PHPUnit or smoke tests,
-  and nothing stops a merge that breaks the site from deploying.
-- **A Drupal deploy.** Pantheon doesn't document running `updatedb` or
-  `config:import` after the code lands, or checking that config matches.
-- **A front-end build.** Pantheon runs `composer install` only, not `npm run build`.
-- **SFTP mode.** These sites have no SFTP mode and no Pantheon git repository.
-
-### Side by side
-
-| | Pantheon GitHub App | `push-to-pantheon` Action | drupal-qa |
-|---|---|---|---|
-| **Plan** | Gold, Platinum, Diamond | Any | Any (multidev needs Gold or higher) |
-| **Maturity** | Generally available | Early Access, before 1.0 | v2 |
-| **Existing sites** | Chosen at site creation; no documented conversion | Yes | Yes |
-| **Moves code to Pantheon** | Yes | Yes | Yes, or leaves it to the GitHub App (`code_host: github-app`) |
-| **Multidev per pull request** | Yes | Yes (`pr-N` or named after the branch) | Yes (`pr-N`) |
-| **Deletes the multidev when the PR closes** | Not documented | On a later run, with `delete_old_environments` | Yes, when the PR closes |
-| **Builds** | `composer install` | Whatever steps you add | Pantheon's Integrated Composer |
-| **PHPCS, PHPStan, PHPUnit, secret scan** | No | No (add your own jobs) | Yes; warn by default, block when listed in `required` |
-| **Can stop a broken deploy** | No | Only through jobs you add | Yes, for checks listed in `required` |
-| **`updatedb` and `config:import`** | Not documented | No | Yes, once the new code is served |
-| **Checks the environment serves the new code** | No | No | Yes, by comparing a file's hash on the container |
-| **Smoke tests against the environment** | No | No (its example runs your own Playwright job) | Behat, including logged-in pages |
-| **Gets through Pantheon's bot protection** | Not applicable | Not applicable | Yes, with the site's bot-bypass token |
-| **Reports back on the PR** | Not documented | GitHub Deployments in the PR timeline | Run summary and PR comment |
-| **Secrets you manage** | None | SSH key and machine token | SSH key and machine token (once per organization) |
-
-Where a cell says "not documented", Pantheon's documentation doesn't say either
-way. It doesn't mean "no".
-
-### Using drupal-qa with the GitHub App
-
-Set `code_host: github-app`. drupal-qa then doesn't push anything. It waits for
-Pantheon to create `pr-N` (or to deploy dev), and from there does everything it
-normally does: waits for the new code, runs `updatedb` and `config:import`, checks
-config and runs Behat. Two caveats:
-
-- **Merges deploy anyway.** Pantheon deploys whatever reaches the default branch,
-  so drupal-qa can't stop a deploy. To stop a merge, make drupal-qa's checks
-  required in the branch protection rules.
-- **`pr-N` naming is assumed.** Pantheon doesn't document how the GitHub App names
-  a pull request's environment, and this mode assumes `pr-N` until it has been
-  confirmed on a live GitHub App site.
-
-## Writing your own Behat tests
-
-Put `.feature` files in `tests/behat/features/`. They run with the package's smoke
-tests and use the steps from the Drupal Extension and Mink, plus these:
-
-- `Given I am logged in as a new user with the "editor" role`. This creates a user
-  on the environment through Drush, logs in with a one-time login link, and
-  deletes the user after the scenario. The Drupal Extension's own "logged in as a
-  user with the role" step can't create users on a remote site from version 5.3
-  on.
+- `Given I am logged in as a new user with the "editor" role` creates a user on
+  the environment through Drush, logs in with a one-time link, and deletes the
+  user after the scenario.
 - `Then I should see the ".selector" element`
 - `Then I should not see the ".selector" element`
 
-Every scenario starts logged out. If you want your own step definitions, extend
+Every scenario starts logged out. For your own step definitions, extend
 `DrupalQa\Behat\FeatureContext` and give the project its own `behat.yml`.
+
+PHPUnit tests in `web/modules/custom/*/tests/src/Unit` and `.../Kernel` are found
+automatically.
 
 ## Troubleshooting
 
 **"Pantheon's bot protection challenges requests from CI".** The site is on
-Pantheon's next-generation CDN and no bypass token reached the request. Check that
-`terminus gcdn:bot-bypass <site>` returns a token when it runs as the account that
-owns the machine token.
+Pantheon's newer CDN and no bypass token reached the request. Check that
+`terminus gcdn:bot-bypass <site>` returns a token for the account that owns the
+token secret.
 
-**"Could not create multidev pr-N".** The site has reached its multidev limit (delete
-an unused one), or it has no multidev (set `multidev: false`).
+**"Could not create multidev pr-N".** The site has reached its multidev limit
+(delete one you don't need), or it has no multidev (set `multidev: false`).
 
 **"Pantheon's master has commits this branch does not".** Someone committed on
-Pantheon: from the dashboard in SFTP mode, or through an Autopilot update. Merge
-Pantheon's `master` into GitHub first. drupal-qa won't push over those commits.
+Pantheon: from the dashboard, in SFTP mode, or through an Autopilot update. Merge
+Pantheon's `master` into GitHub first. In a clone made with `terminus local:clone`,
+Pantheon is `origin`: `git pull origin master`, then push to GitHub.
 
 **"still serves the old file after 15 minutes".** Pantheon's code log can show
-your commit while the container still runs the old build. Pushing an empty commit
-gives Pantheon a new commit to sync, and that usually clears it:
+your commit while the environment still runs the old build. An empty commit gives
+it something new to sync, and usually clears it:
 `git commit --allow-empty -m "chore: re-sync" && git push`.
+
+**"Log in to Pantheon" fails on every run.** The token secret has expired or been
+revoked. Make a new one ([Getting the two secrets](#pantheon_machine_token)) and
+replace the secret.
 
 **A new Pantheon site has both `main` and `master`.** Dev deploys from `master`;
 `main` is the untouched starting template. Push `master` to GitHub as your default
 branch.
 
+**Composer audit shows ⚠️ on every pull request.** A dependency has a known
+advisory. `composer audit` lists it; updating the package usually clears it.
+
 **PHPStan reports a lot on the first run.** It only warns until you add `phpstan`
-to `required`. The default is level 1. For a stricter level, give the project a
+to `required`. The default is level 1; for a stricter level, give the project a
 `phpstan.neon`.
+
+## Pantheon's GitHub integration and drupal-qa
+
+Pantheon now has two ways to move code from GitHub to Pantheon. Neither one tests
+anything, so they work alongside drupal-qa rather than replacing it: Pantheon's
+tools move **code**, while drupal-qa moves code **and checks the result**.
+
+- **The GitHub Application.** Generally available since April 2026 for Gold,
+  Platinum and Diamond workspaces; GitLab followed (Terminus in June, the
+  dashboard in August). The GitHub repository *is* the site's repository: pushing
+  or merging to `main` deploys to dev, and pull requests get multidevs. No
+  secrets, no Actions. ([docs](https://docs.pantheon.io/guides/external-repositories/github))
+- **The `push-to-pantheon` GitHub Action.** Pantheon's own action for pushing to
+  dev and to per-PR multidevs from a workflow. Still Early Access at 0.9.6; pin
+  0.9.4 or later, which fixed a command injection.
+  ([repository](https://github.com/pantheon-systems/push-to-pantheon))
+
+What the GitHub Application **isn't**, as of October 2026:
+
+- **A switch for an existing site.** It is chosen when a site is created
+  (`terminus site:create … --vcs-provider=github`). Pantheon documents no way to
+  move an existing site over; the realistic path is a new site plus a database,
+  files and domain migration. Ask Pantheon before promising it.
+- **A test runner.** Its GitHub permissions don't include commit statuses or
+  checks, so it can't report a result, let alone stop a broken merge.
+- **A Drupal deploy.** Nothing documents it running `updatedb` or
+  `config:import` after the code lands.
+- **SFTP or Pantheon git.** These sites have neither.
+
+| | GitHub Application | `push-to-pantheon` | drupal-qa |
+|---|---|---|---|
+| **Plan** | Gold and up | Any | Any (multidev needs Gold and up) |
+| **Existing sites** | No documented conversion | Yes | Yes |
+| **Moves code** | Yes | Yes | Yes, or leaves it to the app (`code_host: github-app`) |
+| **Multidev per pull request** | Yes | Yes | Yes (`pr-N`) |
+| **Deletes it when the PR closes** | Not documented | On a later run | Yes |
+| **PHPCS, PHPStan, PHPUnit, secret scan** | No | Add your own | Yes |
+| **Can stop a broken deploy** | No | Through jobs you add | Yes, for checks under `required` |
+| **`updatedb` and `config:import`** | Not documented | No | Yes, once the new code is served |
+| **Waits until the new code is served** | No | No | Yes |
+| **Smoke tests on the environment** | No | Your own | Behat, logged in and out |
+| **Reports on the pull request** | Not documented | GitHub Deployments | Comment and run summary |
+| **Secrets** | None | Token and SSH key | Token and SSH key |
+
+"Not documented" means Pantheon's documentation doesn't say either way.
+
+**Using drupal-qa with the GitHub Application.** Set `code_host: github-app`.
+drupal-qa then pushes nothing: it waits for Pantheon to build `pr-N` or deploy
+dev, then does everything else. Pantheon deploys whatever reaches `main`, so make
+drupal-qa's checks required in branch protection if a failing check should stop
+the merge. Pantheon doesn't document the app's environment names; this mode
+assumes `pr-N`, as in Pantheon's own Next.js docs.
 
 ## Upgrading from v1
 
-v1 was `thronedigital/drupal-qa` 1.x, with four workflow files from `DanePete/drupal-qa`.
-Its tags stay where they are, so nothing breaks until you move. To move:
+v1 was `thronedigital/drupal-qa` 1.x, with four workflow files from
+`DanePete/drupal-qa`. Its tags stay where they are, so nothing breaks until you
+move. To move:
 
-1. `composer require --dev thronedigital/drupal-qa:^2`.
+1. `composer require --dev thronedigital/drupal-qa:^2`
 2. Delete `pr-checks.yml`, `multidev.yml`, `multidev-cleanup.yml` and
    `deploy-pantheon.yml`, and add the single workflow from [Install](#install).
-   Map the old inputs like this:
+   The old inputs map like this:
    - `phpcs_required: true` becomes `required: phpcs`.
    - `phpcs_paths` and `php_version` are detected now.
    - `run_behat: false` becomes `skip: behat`.
 3. If v1 put `grumphp.yml.dist`, `CLAUDE.md` or `.github/copilot-instructions.md`
-   into the project, v2 no longer manages them. Keep or delete them as you like.
+   in the project, v2 no longer manages them. Keep or delete them.
 
-Behat in v1 never reached the multidev. Its requests went to localhost, and its
-logged-in scenarios couldn't create users. A project-specific `behat.yml` written
-against v1 probably needs its `base_url` removed (CI sets it), and its login steps
-switched to `I am logged in as a new user with the "…" role`.
+Behat in v1 never reached the multidev: its requests went to localhost, and its
+logged-in scenarios couldn't create users. A project `behat.yml` written for v1
+probably needs its `base_url` removed (CI sets it) and its login steps switched to
+`I am logged in as a new user with the "…" role`.
 
 ## Releasing
 
-Sites reference the workflow as `@v2`, which is a tag that moves. Every release
-tags the exact version, then moves `v2` to the same commit. If `v2` isn't moved,
-every site on `@v2` keeps running old code; v1 shipped a fix that never reached
-`@v1` this way.
+Sites reference the workflow as `@v2`, a tag that moves. Every release tags the
+exact version and then moves `v2` to the same commit. If `v2` isn't moved, every
+site keeps running the old code.
 
 ```bash
-git tag v2.0.1 && git tag -f v2 v2.0.1
-git push origin v2.0.1 && git push -f origin v2
+git tag v2.0.3 && git tag -f v2 v2.0.3
+git push origin v2.0.3 && git push -f origin v2
 ```
 
-Test a change first on a sandbox site by pointing its workflow at `@main`.
+Test a change on a sandbox site first by pointing its workflow at `@main`.
 
 ## License
 
