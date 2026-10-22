@@ -1,5 +1,5 @@
 {
-    "name": "augustash/drupal-qa",
+    "name": "thronedigital/drupal-qa",
     "description": "CI for Drupal sites on Pantheon: checks on every pull request, a multidev per pull request, and deploys that wait until Pantheon is really serving the new code.",
     "type": "library",
     "license": "MIT",

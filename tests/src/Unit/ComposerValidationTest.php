@@ -23,7 +23,7 @@ class ComposerValidationTest extends TestCase {
    */
   protected function setUp(): void {
     parent::setUp();
-    // Walk up from vendor/augustash/drupal-qa/tests/src/Unit to project root.
+    // Walk up from vendor/thronedigital/drupal-qa/tests/src/Unit to project root.
     $this->projectRoot = realpath(__DIR__ . '/../../../../../../') ?: getcwd();
   }
 

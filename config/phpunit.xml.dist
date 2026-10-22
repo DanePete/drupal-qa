@@ -21,7 +21,7 @@
   <testsuites>
     <!-- Package-provided smoke tests -->
     <testsuite name="drupal-qa">
-      <directory suffix="Test.php">vendor/augustash/drupal-qa/tests/src/Unit</directory>
+      <directory suffix="Test.php">vendor/thronedigital/drupal-qa/tests/src/Unit</directory>
     </testsuite>
     <!-- Project-specific unit tests (auto-discovered) -->
     <testsuite name="unit">

@@ -9,7 +9,9 @@ on:
 
 jobs:
   qa:
-    uses: augustash/drupal-qa/.github/workflows/pipeline.yml@v2
+    uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
     with:
       pantheon_site: my-site
-    secrets: inherit
+    secrets:
+      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
+      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}

@@ -245,7 +245,7 @@ jobs:
         run: |
           composer install --no-interaction --no-progress --prefer-dist
           if [ ! -x vendor/bin/phpcs ] || [ ! -x vendor/bin/phpstan ]; then
-            echo "::error title=drupal-qa::The QA tools are not installed. Run: composer require --dev augustash/drupal-qa"
+            echo "::error title=drupal-qa::The QA tools are not installed. Run: composer require --dev thronedigital/drupal-qa"
             exit 1
           fi
 
@@ -275,7 +275,7 @@ jobs:
           else
             # shellcheck disable=SC2086
             vendor/bin/phpstan analyse --memory-limit=-1 --no-progress --error-format=github \
-              --configuration="$(composer config vendor-dir)/augustash/drupal-qa/config/phpstan.neon.dist" $CODE_PATHS
+              --configuration="$(composer config vendor-dir)/thronedigital/drupal-qa/config/phpstan.neon.dist" $CODE_PATHS
           fi
 
       - name: YAML lint
@@ -376,7 +376,7 @@ jobs:
         run: |
           composer install --no-interaction --no-progress --prefer-dist
           if [ ! -x vendor/bin/phpunit ]; then
-            echo "::error title=drupal-qa::PHPUnit is not installed. Run: composer require --dev augustash/drupal-qa"
+            echo "::error title=drupal-qa::PHPUnit is not installed. Run: composer require --dev thronedigital/drupal-qa"
             exit 1
           fi
 
@@ -390,7 +390,7 @@ jobs:
         run: |
           # A project's own phpunit.xml(.dist) wins; otherwise the package's.
           if [ ! -f phpunit.xml ] && [ ! -f phpunit.xml.dist ]; then
-            cp "$(composer config vendor-dir)/augustash/drupal-qa/config/phpunit.xml.dist" phpunit.xml.dist
+            cp "$(composer config vendor-dir)/thronedigital/drupal-qa/config/phpunit.xml.dist" phpunit.xml.dist
           fi
           vendor/bin/phpunit --testdox 2>&1 | tee "$RUNNER_TEMP/phpunit.txt"
           if grep -q 'No tests executed' "$RUNNER_TEMP/phpunit.txt"; then
@@ -684,7 +684,7 @@ jobs:
         run: |
           composer install --no-interaction --no-progress --prefer-dist
           if [ ! -x vendor/bin/behat ]; then
-            echo "::error title=drupal-qa::Behat is not installed. Run: composer require --dev augustash/drupal-qa"
+            echo "::error title=drupal-qa::Behat is not installed. Run: composer require --dev thronedigital/drupal-qa"
             exit 1
           fi
 
@@ -725,7 +725,7 @@ jobs:
           done
           if [ -z "$base" ]; then
             base=behat.yml.dist
-            cp "$(composer config vendor-dir)/augustash/drupal-qa/config/behat.yml.dist" "$base"
+            cp "$(composer config vendor-dir)/thronedigital/drupal-qa/config/behat.yml.dist" "$base"
           fi
           # Pantheon's next-generation CDN challenges automated traffic, which
           # turns every request into a 403 that a test cannot tell from

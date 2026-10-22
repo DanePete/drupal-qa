@@ -19,7 +19,7 @@ smoke-tests the site.
 **1. Add the package:**
 
 ```bash
-composer require --dev augustash/drupal-qa
+composer require --dev thronedigital/drupal-qa
 ```
 
 It brings PHPCS (Drupal standard), PHPStan with `phpstan-drupal`, PHPUnit and
@@ -40,10 +40,12 @@ on:
 
 jobs:
   qa:
-    uses: augustash/drupal-qa/.github/workflows/pipeline.yml@v2
+    uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
     with:
       pantheon_site: my-site
-    secrets: inherit
+    secrets:
+      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
+      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
 ```
 
 **3. Add two secrets** under *Settings → Secrets and variables → Actions*. If you
@@ -54,14 +56,8 @@ add them once at organization level, every repository in the org can use them.
 | `PANTHEON_MACHINE_TOKEN` | Pantheon dashboard → your account → *Machine Tokens*. |
 | `PANTHEON_SSH_KEY` | The private half of a key on a Pantheon account that can reach the site. Make it RSA (`ssh-keygen -t rsa -b 4096 -m PEM`), because Terminus refuses ed25519 keys. |
 
-Outside the `augustash` organization, `secrets: inherit` doesn't cross
-organizations, so pass the two secrets by name instead:
-
-```yaml
-    secrets:
-      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
-      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
-```
+The workflow passes the two secrets by name because `secrets: inherit` doesn't
+reach a workflow in another account or organization.
 
 That's the whole install. Open a pull request to see it run.
 
@@ -147,7 +143,7 @@ can from the code, asks only what it can't, and shows you the file before writin
 anything.
 
 ```text
-Install augustash/drupal-qa (https://github.com/augustash/drupal-qa) in this
+Install thronedigital/drupal-qa (https://github.com/DanePete/drupal-qa) in this
 Drupal project, which is hosted on Pantheon. Read that repository's README first.
 Its "Install" and "Options" sections are the source of truth for the workflow
 file and its inputs.
@@ -159,11 +155,10 @@ file and its inputs.
      down anywhere, it's a question for step 3;
    - whether ddev is used (if so, run composer as `ddev composer`);
    - the default branch, from `gh repo view --json defaultBranchRef`;
-   - the GitHub owner. `secrets: inherit` only works for repositories in the
-     augustash organization; anywhere else, pass the two secrets by name;
-   - any existing .github/workflows files, especially v1 drupal-qa files that
-     reference DanePete/drupal-qa or thronedigital/drupal-qa, or a drupal-qa.yml
-     that's already there (update it; don't add a second);
+   - any existing .github/workflows files, especially v1 drupal-qa files
+     (pr-checks.yml, multidev.yml, multidev-cleanup.yml, deploy-pantheon.yml
+     calling DanePete/drupal-qa@v1), or a drupal-qa.yml that's already there
+     (update it; don't add a second);
    - whether the project already has phpunit.xml, phpstan.neon or behat.yml.
 2. Ask me before running any terminus command. If I agree, run only read-only
    ones: `terminus site:info <site>` to confirm the site, and
@@ -178,12 +173,12 @@ file and its inputs.
    Don't ask about strictness. The defaults warn and never block, which is the
    right start.
 4. Create a branch named chore/drupal-qa. Then:
-   - run `composer require --dev augustash/drupal-qa`;
+   - run `composer require --dev thronedigital/drupal-qa`;
    - write .github/workflows/drupal-qa.yml from the README, with only the inputs
      that differ from the defaults, and the push trigger set to the default
      branch;
-   - if v1 drupal-qa is present, remove its four workflow files and
-     thronedigital/drupal-qa from composer.json;
+   - if v1 drupal-qa is present, remove its four workflow files (the composer
+     require above moves thronedigital/drupal-qa to v2);
    - show me the workflow file and the composer.json change, list the packages
      the lock file adds, and wait for my OK before committing.
 5. Check that the secrets PANTHEON_MACHINE_TOKEN and PANTHEON_SSH_KEY exist, with
@@ -325,10 +320,10 @@ to `required`. The default is level 1. For a stricter level, give the project a
 
 ## Upgrading from v1
 
-v1 was `thronedigital/drupal-qa`, with four workflow files from `DanePete/drupal-qa`.
+v1 was `thronedigital/drupal-qa` 1.x, with four workflow files from `DanePete/drupal-qa`.
 Its tags stay where they are, so nothing breaks until you move. To move:
 
-1. `composer remove --dev thronedigital/drupal-qa && composer require --dev augustash/drupal-qa`.
+1. `composer require --dev thronedigital/drupal-qa:^2`.
 2. Delete `pr-checks.yml`, `multidev.yml`, `multidev-cleanup.yml` and
    `deploy-pantheon.yml`, and add the single workflow from [Install](#install).
    Map the old inputs like this:

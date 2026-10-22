@@ -11,7 +11,7 @@ default:
   suites:
     default:
       paths:
-        - '%paths.base%/vendor/augustash/drupal-qa/tests/behat/features/drupal'
+        - '%paths.base%/vendor/thronedigital/drupal-qa/tests/behat/features/drupal'
         - '%paths.base%/tests/behat/features'
       contexts:
         - DrupalQa\Behat\FeatureContext
@@ -20,7 +20,7 @@ default:
         - Drupal\DrupalExtension\Context\MessageContext
     commerce:
       paths:
-        - '%paths.base%/vendor/augustash/drupal-qa/tests/behat/features/commerce'
+        - '%paths.base%/vendor/thronedigital/drupal-qa/tests/behat/features/commerce'
       contexts:
         - DrupalQa\Behat\FeatureContext
         - Drupal\DrupalExtension\Context\DrupalContext
