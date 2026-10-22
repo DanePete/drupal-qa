@@ -244,6 +244,40 @@ the deploy steps block, so a site can adopt drupal-qa without stopping work.
 
 ![A pull request's checks, one per drupal-qa job](docs/images/run-pr-checks.png)
 
+### Starting on an older site
+
+Too many errors to start with? Nothing blocks a merge unless you ask, so a site with a
+thousand PHPStan errors can still adopt drupal-qa today. When you want the checks to
+mean something:
+
+- **Turn a check off:** `skip: phpstan` or `skip: phpcs` in the workflow.
+- **Start PHPStan lower:** add a `phpstan.neon` to the project root with `level: 0`. With
+  your own file, CI uses it instead of ours, so it must list the paths.
+- **Only count new errors:** a PHPStan *baseline* records today's errors once; from then
+  on only errors that aren't in it are reported. Fix old ones whenever, and regenerate it
+  to shrink it.
+
+```neon
+# phpstan.neon
+includes:
+  - vendor/thronedigital/drupal-qa/config/phpstan.neon.dist
+  - phpstan-baseline.neon
+
+parameters:
+  level: 1                 # or 0 to start lower
+  paths:
+    - web/modules/custom
+    - web/themes/custom
+```
+
+```bash
+ddev exec vendor/bin/phpstan analyse --generate-baseline phpstan-baseline.neon
+git add phpstan.neon phpstan-baseline.neon && git commit -m "chore: PHPStan baseline"
+```
+
+PHPCS can't be loosened: it always uses the Drupal standard, reports errors only and skips
+line length. It warns unless required, or `skip: phpcs` turns it off.
+
 ## Adding your own tests
 
 drupal-qa's tests check what every Drupal site needs. Yours check what your site

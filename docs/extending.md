@@ -349,6 +349,37 @@ parameters:
 
 CI looks for `phpstan.neon`, `phpstan.neon.dist` and `phpstan.dist.neon`.
 
+## Looser checks for an older site
+
+**Start PHPStan lower.** The same file with `level: 0` runs only the most basic checks.
+
+**Count only new errors, with a baseline.** A baseline records the errors the code has
+today; PHPStan then reports only errors that aren't in it. Add it to your `phpstan.neon`:
+
+```neon
+includes:
+  - vendor/thronedigital/drupal-qa/config/phpstan.neon.dist
+  - phpstan-baseline.neon
+
+parameters:
+  level: 1
+  paths:
+    - web/modules/custom
+    - web/themes/custom
+```
+
+Then generate it and commit both files:
+
+```bash
+ddev exec vendor/bin/phpstan analyse --generate-baseline phpstan-baseline.neon
+```
+
+From then on a pull request that adds an error gets a warning naming it, while the old
+ones stay quiet. Regenerate the baseline after fixing old errors so it only shrinks; never
+regenerate it to hide new ones.
+
+**Turn a check off.** `skip: phpstan` or `skip: phpcs` in the workflow's `with:`.
+
 **PHPCS** always uses the Drupal standard, reports errors but not warnings, and skips
 line length. A `phpcs.xml` doesn't change it; `skip: phpcs` turns it off.
 
