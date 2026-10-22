@@ -670,7 +670,9 @@ jobs:
             echo "::error title=Status report::Could not read the status report from $ENV_NAME."
             exit 1
           }
-          report=$(echo "$report" | grep -vE '^[[:space:]]*\[(notice|info|warning|success|debug)\]')
+          # Drush's own log lines, some of them many lines long, come before
+          # the JSON; the JSON starts on the first line that opens it.
+          report=$(echo "$report" | awk 'f || /^[[{]/ { f = 1; print }')
           [ -n "$report" ] || report='[]'
           rows=$(echo "$report" | jq 'length' 2> /dev/null) || {
             echo "::error title=Status report::Unexpected status report output from $ENV_NAME:"

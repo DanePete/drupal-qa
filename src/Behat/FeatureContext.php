@@ -40,6 +40,9 @@ class FeatureContext extends RawDrupalContext {
    * @Given I am logged in as a new user with the :role role
    */
   public function loginAsNewUserWithRole(string $role): void {
+    if (strtolower($role) === 'administrator') {
+      $role = $this->administratorRole();
+    }
     $drush = $this->getDriver('drush');
     $name = 'drupal_qa_' . bin2hex(random_bytes(4));
     $drush->drush('user:create', [escapeshellarg($name)], [
@@ -309,10 +312,12 @@ class FeatureContext extends RawDrupalContext {
   }
 
   /**
-   * Checks the anonymous and authenticated roles can't do admin things.
+   * Checks visitors can't do admin things.
    *
    * Two of Security Review's checks: no permission marked "restrict access",
-   * and no text format without HTML filtering.
+   * and no text format without HTML filtering. The anonymous role is always
+   * checked; the authenticated role only when visitors can register
+   * themselves, since otherwise every account was made by the site's staff.
    *
    * @Then visitors and ordinary users hold no restricted permissions
    */
@@ -320,7 +325,8 @@ class FeatureContext extends RawDrupalContext {
     $problems = $this->drupalJson(<<<'PHP'
       $out = [];
       $all = \Drupal::service('user.permissions')->getPermissions();
-      $roles = \Drupal::entityTypeManager()->getStorage('user_role')->loadMultiple(['anonymous', 'authenticated']);
+      $checked = \Drupal::config('user.settings')->get('register') === 'admin_only' ? ['anonymous'] : ['anonymous', 'authenticated'];
+      $roles = \Drupal::entityTypeManager()->getStorage('user_role')->loadMultiple($checked);
       foreach ($roles as $role) {
         if ($role->isAdmin()) {
           $out[] = sprintf('The %s role is an administrator role.', $role->id());
@@ -334,7 +340,7 @@ class FeatureContext extends RawDrupalContext {
       }
       if (\Drupal::moduleHandler()->moduleExists('filter')) {
         foreach (filter_formats() as $format) {
-          $granted = array_intersect(array_keys(filter_get_roles_by_format($format)), ['anonymous', 'authenticated']);
+          $granted = array_intersect(array_keys(filter_get_roles_by_format($format)), $checked);
           if (!$granted) {
             continue;
           }
@@ -443,6 +449,31 @@ class FeatureContext extends RawDrupalContext {
     if ($count !== 1) {
       throw new \RuntimeException(sprintf('The page has %d canonical links; it should have exactly one.', $count));
     }
+  }
+
+  /**
+   * The site's administrator role: "administrator", or the role marked admin.
+   *
+   * Sites built from other profiles name it differently ("admin",
+   * "site_administrator"); what makes it the admin role is its flag.
+   */
+  protected function administratorRole(): string {
+    $id = (string) $this->drupalJson(<<<'PHP'
+      $roles = \Drupal::entityTypeManager()->getStorage('user_role')->loadMultiple();
+      if (isset($roles['administrator'])) {
+        return 'administrator';
+      }
+      foreach ($roles as $role) {
+        if ($role->isAdmin()) {
+          return $role->id();
+        }
+      }
+      return '';
+      PHP);
+    if ($id === '') {
+      throw new \RuntimeException('This site has no administrator role (a role marked "Is admin"), so the administrator scenarios cannot log in.');
+    }
+    return $id;
   }
 
   /**
