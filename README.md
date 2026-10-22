@@ -22,6 +22,9 @@ mkdir -p ~/drupal-qa-setup && cd ~/drupal-qa-setup && bash <(curl -fsSL https://
 
 Rather do it by hand? Every step is in [Manual installation](#manual-installation).
 
+**Out of the box:** 6 code checks, 7 deploy checks, 24 smoke tests and 10 project-health
+tests. [See every one](#tests-included-out-of-the-box).
+
 The setup wizard installs the package, writes the workflow, connects GitHub, sets both
 secrets, adds the SSH key to Pantheon, opens the first pull request and watches it run.
 
@@ -30,7 +33,7 @@ secrets, adds the SSH key to Pantheon, opens the first pull request and watches 
 - Run it again at any point: it skips what's done. `--dry-run` changes nothing.
 
 **In this README:** [the wizard, stage by stage](#the-wizard-stage-by-stage),
-[what it runs](#what-it-runs), [what blocks a merge](#what-blocks-a-merge),
+[the tests included](#tests-included-out-of-the-box), [what blocks a merge](#what-blocks-a-merge),
 [adding your own tests](#adding-your-own-tests), the [reference](#reference), and
 [manual installation](#manual-installation).
 
@@ -107,7 +110,11 @@ minutes, most of it Pantheon building the multidev.
 
 ![Stage 10: every step's result and the pull request's own environment](docs/images/wizard-results.png)
 
-## What it runs
+## Tests included out of the box
+
+Every site gets all of this without writing a single test: **6 code checks, 7 deploy
+checks, 24 smoke tests** (18 on every site, 6 more where a module is on) **and 10
+project-health tests**, plus a check for PHP errors while they run.
 
 | When | What happens |
 |---|---|
@@ -117,7 +124,9 @@ minutes, most of it Pantheon building the multidev.
 
 ![The run in GitHub Actions, annotated job by job](docs/images/run-actions-graph.png)
 
-**Code checks** run on the code, in GitHub:
+### 1. Code checks: 6
+
+Run on the code, in GitHub.
 
 | Check | What it does | By default |
 |---|---|---|
@@ -126,11 +135,13 @@ minutes, most of it Pantheon building the multidev.
 | YAML lint | Syntax errors and duplicate keys in the config sync directory | warns |
 | Composer audit | Dependencies with known security advisories | warns |
 | Secret scan | Passwords and keys in the commits this change adds ([gitleaks](https://github.com/gitleaks/gitleaks)) | warns |
-| PHPUnit | Your Unit and Kernel tests, plus three of drupal-qa's own, with a MariaDB for Kernel tests | **blocks** |
+| PHPUnit | Your Unit and Kernel tests, plus drupal-qa's 10 [project-health tests](#4-project-health-tests-10), with a MariaDB for Kernel tests | **blocks** |
 
-**Deploy** puts the code on the pull request's multidev, or on `dev` after a merge:
+### 2. Deploy checks: 7
 
-| Step | What it does | By default |
+Put the code on the pull request's multidev, or on `dev` after a merge.
+
+| Check | What it does | By default |
 |---|---|---|
 | Deliver code | Pushes to Pantheon, creating `pr-N` first (from live, or from dev if live isn't initialized) | **blocks** |
 | Serving this commit | Waits until the environment serves a file from this exact commit | **blocks** |
@@ -140,37 +151,67 @@ minutes, most of it Pantheon building the multidev.
 | Config status | Config on the environment matches the code | warns |
 | Status report | No errors on Drupal's status report (update availability and cron aside) | warns |
 
-**Behat** tests the running site over HTTP, logged out and logged in:
+### 3. Smoke tests: 24
 
-| Feature | Scenarios |
+Behat scenarios that test the running multidev over HTTP. "Logged in" ones create a
+throwaway user through Drush and delete it afterwards. They warn by default, and your own
+scenarios run alongside them.
+
+**On every site (18):**
+
+| # | Smoke test | What it checks | Logged in |
+|---|---|---|---|
+| 1 | The front page loads | The front page answers 200 | |
+| 2 | A missing page returns 404 | A made-up address gets a real 404, not a 200 or a 500 | |
+| 3 | The front page's stylesheets and scripts load | Every same-site CSS and JS file it links answers 200 with the right type | |
+| 4 | Pages send Drupal's security headers | `X-Content-Type-Options`, framing protection, no debug cache headers | |
+| 5 | Visitors get a page Pantheon can cache | A public `max-age` above 0, and no session for visitors | |
+| 6 | The newest page of each content type loads | The newest published page of every content type and vocabulary renders without a server error | yes |
+| 7 | The login page loads | `/user/login` answers 200 | |
+| 8 | The password reset form loads | `/user/password` answers 200 | |
+| 9 | Registration is open only if the site allows it | `/user/register` matches the site's registration setting | yes |
+| 10 | A logged-in user reaches their account | `/user` answers 200 when logged in | yes |
+| 11 | Anonymous visitors cannot reach administration | `/admin` is 403 for visitors | |
+| 12 | Anonymous visitors cannot reach structure | `/admin/structure` is 403 for visitors | |
+| 13 | Anonymous visitors cannot reach configuration | `/admin/config` is 403 for visitors | |
+| 14 | Anonymous visitors cannot list people | `/admin/people` is 403 for visitors | |
+| 15 | Administrators can reach administration | An administrator reaches `/admin` | yes |
+| 16 | The main admin screens load | The content, people and status report screens load | yes |
+| 17 | Every content type's add form loads | `/node/add/…` loads for every content type | yes |
+| 18 | Visitors and ordinary users hold no restricted permissions | No permission marked "restrict access" and no unfiltered text format for visitors, or for ordinary users where visitors can register | yes |
+
+**Only where the module is on (6):**
+
+| # | Smoke test | What it checks | Runs with |
+|---|---|---|---|
+| 19 | Open webforms load with their submit button | Each open webform page shows its submit button. Nothing is submitted. | Webform |
+| 20 | The search page answers a search | The default search page answers a query | core Search |
+| 21 | The sitemap is served | `/sitemap.xml` is a sitemap | Simple XML Sitemap or XML sitemap |
+| 22 | The front page has a title and one canonical link | A `<title>` and exactly one canonical link | Metatag |
+| 23 | Anonymous visitors can open the cart | `/cart` opens for a visitor | Commerce |
+| 24 | A new customer sees an empty cart | A new logged-in customer's cart is empty | Commerce |
+
+### 4. Project-health tests: 10
+
+drupal-qa's own PHPUnit tests, run with yours. They check the project itself, not the site.
+
+| Test | What it checks |
 |---|---|
-| Pages load | The front page is 200; a missing page is a real 404; every stylesheet and script on the front page loads; security headers are sent; visitors get a page Pantheon can cache; the newest page of each content type and vocabulary renders |
-| Logging in | The login form and password reset load; `/admin` is 403 for visitors; registration is open exactly when the site allows it; a logged-in user reaches `/user` |
-| Access control | `/admin/structure`, `/admin/config` and `/admin/people` are 403 for visitors; an administrator reaches `/admin` |
-| Administration | The content, people and status report screens load; every content type's add form loads |
-| Safe roles | Visitors, and ordinary users where visitors can register, hold no restricted permission and no unfiltered text format |
-| Webforms | *With Webform:* each open webform shows its submit button. Nothing is submitted. |
-| Search | *With core Search:* the search page answers a search |
-| XML sitemap | *With Simple XML Sitemap or XML sitemap:* `/sitemap.xml` is a sitemap |
-| Meta tags | *With Metatag:* the front page has a title and one canonical link |
-| Shopping cart | *With Commerce:* `/cart` opens; a new customer's cart is empty |
+| `composer.json` is valid | It exists and is valid JSON |
+| `composer.lock` exists | Composer's lock file is committed |
+| Local patches exist | Every local patch file `composer.json` names is in the repository |
+| No debug packages in `require` | Notes `kint` or `var-dumper` outside `require-dev`; advice only, never fails |
+| Module info files are valid YAML | Every custom module's `.info.yml`, submodules included |
+| Module info files have the required keys | `name`, `type` and `core_version_requirement` |
+| No retired `core:` key | Module info files use `core_version_requirement` |
+| Drupal's test base finds the site | PHPUnit is set up to bootstrap Drupal |
+| Core classes autoload | Drupal's autoloader works |
+| String translation loads | `StringTranslationTrait` is available |
 
-Your own scenarios run alongside these. Logged-in scenarios create a throwaway user
-through Drush and delete it afterwards. Behat warns by default.
+### 5. After the tests: 1
 
-**PHP errors logged**, with dblog on: no PHP warning or error was logged on the
-environment while Behat ran. It warns by default.
-
-<details>
-<summary>drupal-qa's own PHPUnit tests</summary>
-
-| Test | Checks |
-|---|---|
-| `ComposerValidationTest` | `composer.json` is valid; `composer.lock` exists; local patch files exist; notes debug packages in `require` |
-| `ModuleInfoTest` | Custom `.info.yml` files are valid YAML, have `name`, `type` and `core_version_requirement`, and don't use `core:` |
-| `DrupalBootstrapTest` | Drupal's test base class, autoloader and string translation load |
-
-</details>
+**PHP errors logged**, with dblog on: no PHP warning or error was logged on the environment
+while the smoke tests ran. Warns by default.
 
 <details>
 <summary>Why green means green</summary>
