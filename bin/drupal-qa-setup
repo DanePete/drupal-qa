@@ -71,7 +71,8 @@ W=$((COLS - 4))
 [ "$W" -gt 78 ] && W=78
 
 FRAMES=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
-STAGES=("Tools" "Project" "Pantheon site" "Package" "Workflow" "GitHub" "Token" "SSH key" "Pull request" "First run")
+STAGES=("Tools" "Project" "Pantheon site" "Package" "Workflow"
+  "GitHub" "Token" "SSH key" "Pull request" "First run")
 TOTAL=${#STAGES[@]}
 CUR=0
 LOGDIR=$(mktemp -d "${TMPDIR:-/tmp}/drupal-qa-setup.XXXXXX")
@@ -82,9 +83,18 @@ hide_cursor() { [ "$ANIM" = 1 ] && printf '\033[?25l'; return 0; }
 show_cursor() { printf '\033[?25h'; }
 nap() { [ "$ANIM" = 1 ] && sleep "$1"; return 0; }
 clear_screen() { printf '\033[2J\033[3J\033[H'; }
+# shellcheck disable=SC2329 # run by the traps below
 cleanup() { show_cursor; stty echo < /dev/tty 2> /dev/null; rm -rf "$LOGDIR"; }
 trap cleanup EXIT
-trap 'show_cursor; printf "\n\n  %sStopped.%s Run it again any time: finished stages are found and skipped.\n\n" "$YELLOW" "$R"; exit 130' INT
+# Ctrl-C: say how to pick up again.
+# shellcheck disable=SC2329 # run by the trap below
+stopped() {
+  show_cursor
+  printf '\n\n  %sStopped.%s Run it again any time: finished stages are found and skipped.\n\n' \
+    "$YELLOW" "$R"
+  exit 130
+}
+trap stopped INT
 
 repeat() { local i out=""; for ((i = 0; i < $2; i++)); do out="$out$1"; done; printf '%s' "$out"; }
 
@@ -101,13 +111,21 @@ kv() { printf '  %s%-18s%s %s\n' "$GRAY" "$1" "$R" "$2"; }
 # wrap TEXT WIDTH: word-wraps on character count, not bytes.
 wrap() { printf '%s\n' "$1" | fold -s -w "$2"; }
 
-# panel TITLE TEXT...: a rounded box. Each TEXT argument is a paragraph.
+# panel TITLE TEXT...: a rounded box. TEXT arguments run on into one paragraph,
+# so long text can span source lines; an empty argument starts the next one.
 panel() {
-  local title=$1 inner=$((W - 4)) line pad first=1
+  local title=$1 inner=$((W - 4)) line pad arg para="" first=1 paras=()
   shift
-  printf '  %s╭─ %s%s%s %s╮%s\n' "$GRAY" "$R$B" "$title" "$R$GRAY" "$(repeat ─ $((W - ${#title} - 5)))" "$R"
-  for para in "$@"; do
-    [ "$first" = 1 ] || printf '  %s│%s%s%s│%s\n' "$GRAY" "$R" "$(repeat ' ' $((W - 2)))" "$GRAY" "$R"
+  for arg in "$@" ""; do
+    if [ -n "$arg" ]; then para=${para:+$para }$arg; continue; fi
+    [ -n "$para" ] && paras+=("$para")
+    para=""
+  done
+  printf '  %s╭─ %s%s%s %s╮%s\n' "$GRAY" "$R$B" "$title" "$R$GRAY" \
+    "$(repeat ─ $((W - ${#title} - 5)))" "$R"
+  for para in "${paras[@]}"; do
+    [ "$first" = 1 ] \
+      || printf '  %s│%s%s%s│%s\n' "$GRAY" "$R" "$(repeat ' ' $((W - 2)))" "$GRAY" "$R"
     first=0
     while IFS= read -r line; do
       line=${line% }
@@ -194,6 +212,12 @@ menu() {
       fi
     done
   }
+  # Highlights the option with this label and redraws.
+  _menu_choose() {
+    for ((i = 0; i < n; i++)); do [ "${opts[i]}" = "$1" ] && sel=$i; done
+    printf '\033[%dA' "$n"
+    _menu_draw
+  }
   _menu_draw
   while true; do
     IFS= read -rsn1 key < /dev/tty
@@ -204,9 +228,9 @@ menu() {
     case "$key" in
       $'\033[A'|k) sel=$(((sel - 1 + n) % n)) ;;
       $'\033[B'|j) sel=$(((sel + 1) % n)) ;;
-      [1-9]) if [ "$key" -le "$n" ]; then sel=$((key - 1)); printf '\033[%dA' "$n"; _menu_draw; break; fi ;;
-      y|Y) for ((i = 0; i < n; i++)); do [ "${opts[i]}" = "Yes" ] && sel=$i; done; printf '\033[%dA' "$n"; _menu_draw; break ;;
-      n|N) for ((i = 0; i < n; i++)); do [ "${opts[i]}" = "No" ] && sel=$i; done; printf '\033[%dA' "$n"; _menu_draw; break ;;
+      [1-9]) if [ "$key" -le "$n" ]; then _menu_choose "${opts[key - 1]}"; break; fi ;;
+      y|Y) _menu_choose Yes; break ;;
+      n|N) _menu_choose No; break ;;
       '') break ;;
     esac
     printf '\033[%dA' "$n"
@@ -223,7 +247,10 @@ menu() {
   MENU_VALUE=${opts[sel]}
 }
 
-pause() { printf '  %s%s%s ' "$GRAY" "${1:-Press Enter to continue}" "$R"; IFS= read -r _ < /dev/tty; }
+pause() {
+  printf '  %s%s%s ' "$GRAY" "${1:-Press Enter to continue}" "$R"
+  IFS= read -r _ < /dev/tty
+}
 
 open_url() {
   printf '  %s↗%s opening %s%s%s\n' "$CYAN" "$R" "$B" "$1" "$R"
@@ -247,7 +274,8 @@ spin() {
   hide_cursor
   if [ "$ANIM" = 1 ]; then
     while kill -0 "$pid" 2> /dev/null; do
-      printf '\r\033[K  %s%s%s %s %s%ss%s' "$CYAN" "${FRAMES[i % 10]}" "$R" "$msg" "$GRAY" $((SECONDS - start)) "$R"
+      printf '\r\033[K  %s%s%s %s %s%ss%s' \
+        "$CYAN" "${FRAMES[i % 10]}" "$R" "$msg" "$GRAY" $((SECONDS - start)) "$R"
       i=$((i + 1))
       sleep 0.08
     done
@@ -282,17 +310,6 @@ act() {
     return 0
   fi
   spin "$@"
-}
-
-# Same as act, for a command that needs the terminal (no spinner).
-act_tty() {
-  local msg=$1
-  shift
-  if [ "$DRY" = 1 ]; then
-    printf '  %s◇ would%s %s\n    %s$ %s%s\n' "$YELLOW" "$R" "$msg" "$GRAY" "$*" "$R"
-    return 0
-  fi
-  "$@" < /dev/tty
 }
 
 # ─── Screens ─────────────────────────────────────────────────────────────
@@ -344,7 +361,9 @@ welcome() {
   done
   gap
   if [ "$DRY" = 1 ]; then
-    panel "Dry run" "Nothing will change: no files, no commits, no repositories, no secrets. Each stage shows what it would do."
+    panel "Dry run" \
+      "Nothing will change: no files, no commits, no repositories, no secrets. Each stage shows" \
+      "what it would do."
     gap
   fi
   muted "You need: a Pantheon account that can reach the site, and a GitHub account"
@@ -356,13 +375,15 @@ welcome() {
 # header: the frame at the top of every stage.
 header() {
   CUR=$1
-  local title=$2 pct filled i icon name color
+  local title=$2 pct filled i icon name color dry=""
   clear_screen
   pct=$(((CUR - 1) * 100 / TOTAL))
   filled=$(((CUR - 1) * 52 / TOTAL))
-  printf '\n  %s%sdrupal-qa setup%s%s' "$B" "$CYAN" "$R" "$( [ "$DRY" = 1 ] && printf '  %s(dry run)%s' "$YELLOW" "$R")"
+  [ "$DRY" = 1 ] && dry=$(printf '  %s(dry run)%s' "$YELLOW" "$R")
+  printf '\n  %s%sdrupal-qa setup%s%s' "$B" "$CYAN" "$R" "$dry"
   printf '%*s%sstage %d of %d%s\n' $((W - 30 - (DRY * 11))) '' "$GRAY" "$CUR" "$TOTAL" "$R"
-  printf '  %s%s%s%s%s  %s%d%%%s\n' "$BLUE" "$(repeat ━ "$filled")" "$GRAY" "$(repeat ─ $((52 - filled)))" "$R" "$GRAY" "$pct" "$R"
+  printf '  %s%s%s%s%s  %s%d%%%s\n' "$BLUE" "$(repeat ━ "$filled")" \
+    "$GRAY" "$(repeat ─ $((52 - filled)))" "$R" "$GRAY" "$pct" "$R"
   for ((i = 0; i < TOTAL; i++)); do
     name=${STAGES[i]}
     if [ $((i + 1)) -lt "$CUR" ]; then icon="✓"; color=$GREEN
@@ -428,15 +449,21 @@ lock_version() {
   [ -f composer.lock ] || return 0
   awk -v p="$1" '
     index($0, "\"name\": \"" p "\"") { f = 1; $0 = substr($0, index($0, "\"name\": \"" p "\"")) }
-    f && match($0, /"version": *"[^"]*"/) { v = substr($0, RSTART, RLENGTH); sub(/^"version": *"/, "", v); sub(/"$/, "", v); print v; exit }
+    f && match($0, /"version": *"[^"]*"/) {
+      v = substr($0, RSTART, RLENGTH); sub(/^"version": *"/, "", v); sub(/"$/, "", v); print v; exit
+    }
   ' composer.lock
 }
 
 # lock_versions: "name version" for every package in composer.lock.
 lock_versions() {
   [ -f composer.lock ] || return 0
-  awk '/"name": "/ { n = $0; sub(/.*"name": "/, "", n); sub(/".*/, "", n) }
-    /"version": "/ && n != "" { v = $0; sub(/.*"version": "/, "", v); sub(/".*/, "", v); print n, v; n = "" }' composer.lock | sort
+  awk '
+    /"name": "/ { n = $0; sub(/.*"name": "/, "", n); sub(/".*/, "", n) }
+    /"version": "/ && n != "" {
+      v = $0; sub(/.*"version": "/, "", v); sub(/".*/, "", v); print n, v; n = ""
+    }
+  ' composer.lock | sort
 }
 
 # installed_version: "v2", "v1" or "" from composer.lock.
@@ -461,21 +488,27 @@ github_remote() {
 }
 
 pantheon_remote_uuid() {
-  local name
-  for name in $(git remote 2> /dev/null); do
-    git config --get "remote.$name.url"
-  done | grep -o 'codeserver\.dev\.[0-9a-f-]\{36\}' | head -1 | sed 's/codeserver\.dev\.//'
+  git config --get-regexp '^remote\..*\.url$' 2> /dev/null \
+    | grep -o 'codeserver\.dev\.[0-9a-f-]\{36\}' | head -1 | sed 's/codeserver\.dev\.//'
 }
 
 repo_from_url() {
-  printf '%s' "$1" | sed -E 's#^(git@github\.com:|https://github\.com/|ssh://git@github\.com/)##; s#\.git$##'
+  printf '%s' "$1" \
+    | sed -E 's#^(git@github\.com:|https://github\.com/|ssh://git@github\.com/)##; s#\.git$##'
+}
+
+# default_branch OWNER/NAME: the GitHub repository's default branch, or nothing.
+default_branch() {
+  gh repo view "$1" --json defaultBranchRef --jq .defaultBranchRef.name 2> /dev/null
 }
 
 # ─── Stages ──────────────────────────────────────────────────────────────
 
 stage_tools() {
   header 1 "Check your tools"
-  panel "Why" "Setup drives four tools for you: git, Composer (or ddev), Terminus for Pantheon, and the GitHub CLI. This checks each one is installed and logged in."
+  panel "Why" \
+    "Setup drives four tools for you: git, Composer (or ddev), Terminus for Pantheon, and the" \
+    "GitHub CLI. This checks each one is installed and logged in."
   gap
   local missing=0
   if spin "git" git --version; then :; else missing=1; fi
@@ -496,8 +529,11 @@ stage_tools() {
     else
       warn "Terminus is installed but not logged in."
       gap
-      panel "Log in to Terminus" "Setup needs a Pantheon token. Make one now: it opens in your browser. The same token becomes the PANTHEON_MACHINE_TOKEN secret in a later stage." \
-        "Avatar menu, User settings, Personal Access Tokens, Add token. Name it after the repository and copy it: Pantheon shows it once."
+      panel "Log in to Terminus" \
+        "Setup needs a Pantheon token. Make one now: it opens in your browser. The same token" \
+        "becomes the PANTHEON_MACHINE_TOKEN secret in a later stage." \
+        "" "Avatar menu, User settings, Personal Access Tokens, Add token. Name it after the" \
+        "repository and copy it: Pantheon shows it once."
       gap
       open_url "$TOKEN_URL"
       ask_secret TOKEN "Paste the token:"
@@ -535,7 +571,9 @@ stage_tools() {
 
 stage_project() {
   header 2 "Find the project"
-  panel "Why" "drupal-qa is added to the site's own code: its composer.json and a workflow file. Run setup from the project folder, or pick a site and setup pulls its code down from Pantheon."
+  panel "Why" \
+    "drupal-qa is added to the site's own code: its composer.json and a workflow file. Run setup" \
+    "from the project folder, or pick a site and setup pulls its code down from Pantheon."
   gap
   while ! is_drupal_project; do
     warn "$(pwd) is not a Drupal project (no composer.json requiring drupal/core)."
@@ -551,7 +589,9 @@ stage_project() {
           act "Pulling $SITE down from Pantheon" terminus local:clone "$SITE" || exit 1
         fi
         if [ "$DRY" = 1 ] && [ ! -d "$dest" ]; then
-          panel "Dry run" "The site isn't pulled down, so the dry run stops here. Pull it down (or run setup in its folder) to preview the rest."
+          panel "Dry run" \
+            "The site isn't pulled down, so the dry run stops here. Pull it down (or run setup" \
+            "in its folder) to preview the rest."
           exit 0
         fi
         cd "$dest" || exit 1
@@ -606,7 +646,9 @@ pick_site() {
   while true; do
     ask filter "$q Type part of its name:"
     list=()
-    while IFS= read -r n; do [ -n "$n" ] && list+=("$n"); done < <(printf '%s\n' "$names" | grep -i -- "$filter" | head -9)
+    while IFS= read -r n; do
+      [ -n "$n" ] && list+=("$n")
+    done < <(printf '%s\n' "$names" | grep -i -- "$filter" | head -9)
     if [ ${#list[@]} = 0 ]; then
       warn "No site matches \"$filter\"."
     elif [ ${#list[@]} = 1 ]; then
@@ -622,7 +664,9 @@ pick_site() {
 
 stage_site() {
   header 3 "Connect the Pantheon site"
-  panel "Why" "Each pull request gets a multidev on this site, and each merge deploys to its dev environment. Setup never touches test or live."
+  panel "Why" \
+    "Each pull request gets a multidev on this site, and each merge deploys to its dev" \
+    "environment. Setup never touches test or live."
   gap
   if [ -z "$SITE" ]; then
     local uuid
@@ -635,9 +679,11 @@ stage_site() {
     SITE=$(grep -o 'pantheon_site: *[a-z0-9-]*' "$WORKFLOW_FILE" | awk '{print $2}')
   fi
   if [ -z "$SITE" ] && [ -f .ddev/config.yaml ]; then
-    SITE=$(grep -o -E 'PANTHEON_SITE=[a-z0-9-]+|project: *[a-z0-9-]+' .ddev/config.yaml | head -1 | sed -E 's/.*[=:] *//')
+    SITE=$(grep -o -E 'PANTHEON_SITE=[a-z0-9-]+|project: *[a-z0-9-]+' .ddev/config.yaml \
+      | head -1 | sed -E 's/.*[=:] *//')
   fi
-  if [ -n "$SITE" ] && spin "Looking up $SITE on Pantheon" terminus site:info "$SITE" --field=label; then
+  if [ -n "$SITE" ] \
+    && spin "Looking up $SITE on Pantheon" terminus site:info "$SITE" --field=label; then
     SITE_LABEL=$(tail -1 "$LAST_LOG")
     confirm "Use $SITE ($SITE_LABEL)?" y || { SITE=""; pick_site "Which Pantheon site is this?"; }
   else
@@ -659,7 +705,8 @@ stage_site() {
   kv "Site" "$SITE"
   kv "Name" "${SITE_LABEL:-?}"
   kv "Plan" "${plan:-?}"
-  kv "Pull requests go to" "$( [ "$MULTIDEV" = true ] && printf 'pr-<number>-%s.pantheonsite.io' "$SITE" || printf 'checks only')"
+  if [ "$MULTIDEV" = true ]; then kv "Pull requests go to" "pr-<number>-$SITE.pantheonsite.io"
+  else kv "Pull requests go to" "checks only"; fi
   kv "Merges go to" "dev-$SITE.pantheonsite.io"
   gap
   pause
@@ -667,7 +714,9 @@ stage_site() {
 
 stage_package() {
   header 4 "Install the package"
-  panel "Why" "The package brings PHPCS, PHPStan, PHPUnit and Behat, plus drupal-qa's own smoke tests. It's a dev dependency: it never ships to Pantheon's servers."
+  panel "Why" \
+    "The package brings PHPCS, PHPStan, PHPUnit and Behat, plus drupal-qa's own smoke tests." \
+    "It's a dev dependency: it never ships to Pantheon's servers."
   gap
   if [ -d .ddev ] && command -v ddev > /dev/null 2>&1; then
     COMPOSER=(ddev composer)
@@ -677,9 +726,11 @@ stage_package() {
     local core_major type docroot
     core_major=$(lock_version drupal/core | cut -d. -f1)
     type="drupal${core_major:-11}"
-    docroot=$(grep -o '"web-root": *"[^"]*"' composer.json | sed -E 's/.*"\.?\/?([^"]*)"$/\1/' | sed 's#/$##')
+    docroot=$(grep -o '"web-root": *"[^"]*"' composer.json \
+      | sed -E 's/.*"\.?\/?([^"]*)"$/\1/' | sed 's#/$##')
     say "No Composer here, so setup uses ddev. It adds a .ddev folder (not committed)."
-    act "Setting up ddev ($type, docroot ${docroot:-web})" ddev config --project-type="$type" --docroot="${docroot:-web}" --auto || exit 1
+    act "Setting up ddev ($type, docroot ${docroot:-web})" \
+      ddev config --project-type="$type" --docroot="${docroot:-web}" --auto || exit 1
     COMPOSER=(ddev composer)
   fi
   if [ "${COMPOSER[0]}" = ddev ] && [ "$DRY" = 0 ]; then
@@ -688,16 +739,21 @@ stage_package() {
 
   local php pantheon_php
   php=$(composer_php)
-  pantheon_php=$(grep -h -o -E '^php_version: *[0-9.]+' pantheon.yml pantheon.upstream.yml 2> /dev/null | head -1 | grep -o '[0-9.]*$')
+  pantheon_php=$(grep -h -o -E '^php_version: *[0-9.]+' pantheon.yml pantheon.upstream.yml \
+    2> /dev/null | head -1 | grep -o '[0-9.]*$')
   if [ -n "$php" ] && [ "$(printf '%s\n' "$php" 8.2 | sort -V | head -1)" != 8.2 ]; then
     local target=${pantheon_php:-8.2}
     [ "$(printf '%s\n' "$target" 8.2 | sort -V | head -1)" != 8.2 ] && target=8.2
     gap
-    panel "PHP version" "composer.json tells Composer to resolve packages for PHP $php, but drupal-qa needs 8.2 or newer.$( [ -n "$pantheon_php" ] && printf ' Pantheon runs this site on PHP %s.' "$pantheon_php")" \
-      "Setup can raise the platform setting to $target. It changes only which package versions Composer picks, not the PHP that runs the site."
+    panel "PHP version" \
+      "composer.json tells Composer to resolve packages for PHP $php, but drupal-qa needs" \
+      "8.2 or newer." ${pantheon_php:+"Pantheon runs this site on PHP $pantheon_php."} \
+      "" "Setup can raise the platform setting to $target. It changes only which package" \
+      "versions Composer picks, not the PHP that runs the site."
     gap
     if confirm "Set config.platform.php to $target?" y; then
-      act "Setting config.platform.php to $target" "${COMPOSER[@]}" config platform.php "$target" || exit 1
+      act "Setting config.platform.php to $target" \
+        "${COMPOSER[@]}" config platform.php "$target" || exit 1
     else
       bad "drupal-qa can't install on PHP $php. Stopping here."
       exit 1
@@ -721,15 +777,17 @@ stage_package() {
     local w=() before
     [ "$INSTALLED" = v1 ] && w=(-W)
     before=$(lock_versions)
-    if ! SPIN_SOFT="Composer can't add these without updating some installed packages. That's common." \
-      act "Adding ${wants[*]}" "${COMPOSER[@]}" require --dev "${wants[@]}" "${w[@]}" --no-interaction; then
+    local soft="Composer can't add these without updating some installed packages. That's common."
+    if ! SPIN_SOFT=$soft act "Adding ${wants[*]}" \
+      "${COMPOSER[@]}" require --dev "${wants[@]}" "${w[@]}" --no-interaction; then
       gap
       muted "Setup first asks Composer to leave every installed package alone, and here it"
       muted "can't. Letting it update the packages these depend on (-W) usually works. Any"
       muted "version it changes is listed next, before anything is committed."
       gap
       confirm "Let Composer update the packages these depend on?" y || exit 1
-      act "Adding ${wants[*]}, with -W" "${COMPOSER[@]}" require --dev "${wants[@]}" -W --no-interaction \
+      act "Adding ${wants[*]}, with -W" \
+        "${COMPOSER[@]}" require --dev "${wants[@]}" -W --no-interaction \
         || { bad "Composer couldn't install them. The output above says why."; exit 1; }
     fi
     show_changed_versions "$before"
@@ -742,7 +800,8 @@ stage_package() {
 
   local old=() f
   for f in $V1_WORKFLOWS; do
-    [ -f ".github/workflows/$f" ] && grep -q 'drupal-qa' ".github/workflows/$f" && old+=(".github/workflows/$f")
+    f=".github/workflows/$f"
+    [ -f "$f" ] && grep -q 'drupal-qa' "$f" && old+=("$f")
   done
   if [ ${#old[@]} -gt 0 ]; then
     gap
@@ -760,34 +819,42 @@ stage_package() {
 # version Composer changed, so they're seen before anything is committed.
 show_changed_versions() {
   [ "$DRY" = 1 ] && return 0
-  local changed
-  changed=$(join <(printf '%s\n' "$1") <(lock_versions) | awk '$2 != $3 { printf "%s %s → %s\n", $1, $2, $3 }')
+  local changed count
+  changed=$(join <(printf '%s\n' "$1") <(lock_versions) \
+    | awk '$2 != $3 { printf "%s %s → %s\n", $1, $2, $3 }')
   [ -z "$changed" ] && { ok "No package the site already had changed version"; return 0; }
   gap
-  warn "Composer changed $(printf '%s\n' "$changed" | wc -l | tr -d ' ') package(s) the site already had:"
+  count=$(printf '%s\n' "$changed" | wc -l | tr -d ' ')
+  warn "Composer changed $count package(s) the site already had:"
   printf '%s\n' "$changed" | sed "s/^/      /"
   muted "    Check these in the pull request before merging."
 }
 
 stage_workflow() {
   header 5 "Add the workflow"
-  panel "Why" "One file tells GitHub to run drupal-qa on every pull request and merge. It names the Pantheon site and passes in the two secrets you'll add next."
+  panel "Why" \
+    "One file tells GitHub to run drupal-qa on every pull request and merge. It names the" \
+    "Pantheon site and passes in the two secrets you'll add next."
   gap
   local remote
   remote=$(github_remote)
   if [ -n "$remote" ]; then
-    DEFAULT_BRANCH=$(gh repo view "$(repo_from_url "${remote#* }")" --json defaultBranchRef --jq .defaultBranchRef.name 2> /dev/null)
+    DEFAULT_BRANCH=$(default_branch "$(repo_from_url "${remote#* }")")
   fi
   [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(git symbolic-ref --short HEAD 2> /dev/null)
   [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=master
 
   local new="$LOGDIR/drupal-qa.yml"
   {
-    printf '%s\n' "name: Drupal QA" "" "on:" "  pull_request:" "    types: [opened, synchronize, reopened, closed]" "  push:" "    branches: [$DEFAULT_BRANCH]" "" "jobs:" "  qa:"
+    printf '%s\n' "name: Drupal QA" "" "on:" "  pull_request:" \
+      "    types: [opened, synchronize, reopened, closed]" \
+      "  push:" "    branches: [$DEFAULT_BRANCH]" "" "jobs:" "  qa:"
     printf '    uses: %s\n' "$WORKFLOW_USES"
     printf '%s\n' "    with:" "      pantheon_site: $SITE"
     [ "$MULTIDEV" = false ] && printf '      multidev: false\n'
-    printf '%s\n' "    secrets:" "      PANTHEON_MACHINE_TOKEN: \${{ secrets.PANTHEON_MACHINE_TOKEN }}" "      PANTHEON_SSH_KEY: \${{ secrets.PANTHEON_SSH_KEY }}"
+    printf '%s\n' "    secrets:" \
+      "      PANTHEON_MACHINE_TOKEN: \${{ secrets.PANTHEON_MACHINE_TOKEN }}" \
+      "      PANTHEON_SSH_KEY: \${{ secrets.PANTHEON_SSH_KEY }}"
   } > "$new"
 
   if [ -f "$WORKFLOW_FILE" ] && cmp -s "$new" "$WORKFLOW_FILE"; then
@@ -798,9 +865,15 @@ stage_workflow() {
     if [ -f "$WORKFLOW_FILE" ]; then
       warn "$WORKFLOW_FILE already exists and differs:"
       gap
-      diff -u "$WORKFLOW_FILE" "$new" | tail -n +3 | sed "s/^-/$RED-/; s/^+/$GREEN+/; s/\$/$R/; s/^/    /"
+      diff -u "$WORKFLOW_FILE" "$new" | tail -n +3 \
+        | sed "s/^-/$RED-/; s/^+/$GREEN+/; s/\$/$R/; s/^/    /"
       gap
-      confirm "Replace it with the new one?" y || { muted "Kept the existing file."; gap; pause; return; }
+      if ! confirm "Replace it with the new one?" y; then
+        muted "Kept the existing file."
+        gap
+        pause
+        return
+      fi
     else
       say "Here's the file, for the ${B}$DEFAULT_BRANCH$R branch and the ${B}$SITE$R site:"
       gap
@@ -821,7 +894,9 @@ stage_workflow() {
 
 stage_github() {
   header 6 "Connect GitHub"
-  panel "Why" "drupal-qa runs in GitHub Actions, so the code needs a GitHub repository. If it already has one, setup uses it. It never force-pushes and never overwrites history."
+  panel "Why" \
+    "drupal-qa runs in GitHub Actions, so the code needs a GitHub repository. If it already has" \
+    "one, setup uses it. It never force-pushes and never overwrites history."
   gap
   local remote
   remote=$(github_remote)
@@ -836,10 +911,12 @@ stage_github() {
   else
     say "This project isn't on GitHub yet."
     gap
-    local me owners=() owner="" name vis visibilities=()
+    local me owners=() owner="" name vis visibilities=() head
     me=$(gh api user --jq .login 2> /dev/null)
     owners=("$me")
-    while IFS= read -r o; do [ -n "$o" ] && owners+=("$o"); done < <(gh api user/orgs --jq '.[].login' 2> /dev/null)
+    while IFS= read -r o; do
+      [ -n "$o" ] && owners+=("$o")
+    done < <(gh api user/orgs --jq '.[].login' 2> /dev/null)
     while true; do
       if [ -z "$owner" ]; then
         menu "Who should own the repository?" "${owners[@]}"
@@ -854,13 +931,16 @@ stage_github() {
       fi
       # GitHub has internal repositories only in Enterprise organizations.
       visibilities=("Private" "Public")
-      if [ "$owner" != "$me" ] && [ "$(gh api "orgs/$owner" --jq .plan.name 2> /dev/null)" = enterprise ]; then
+      if [ "$owner" != "$me" ] \
+        && [ "$(gh api "orgs/$owner" --jq .plan.name 2> /dev/null)" = enterprise ]; then
         visibilities=("Private" "Internal (organization only)" "Public")
       fi
       menu "Visibility?" "${visibilities[@]}"
       vis=$(printf '%s' "$MENU_VALUE" | awk '{print tolower($1)}')
-      confirm "Create $GH_REPO ($vis) and push the ${B}$(git symbolic-ref --short HEAD)$R branch to it?" y || continue
-      if act "Creating $GH_REPO" gh repo create "$GH_REPO" "--$vis" --source . --remote github --push; then
+      head=$(git symbolic-ref --short HEAD)
+      confirm "Create $GH_REPO ($vis) and push the ${B}$head$R branch to it?" y || continue
+      if act "Creating $GH_REPO" \
+        gh repo create "$GH_REPO" "--$vis" --source . --remote github --push; then
         GH_REMOTE=github
         DONE_NOTES+=("Created $GH_REPO on GitHub")
         break
@@ -872,10 +952,12 @@ stage_github() {
       owner=""
     done
   fi
-  DEFAULT_BRANCH=$(gh repo view "$GH_REPO" --json defaultBranchRef --jq .defaultBranchRef.name 2> /dev/null)
+  DEFAULT_BRANCH=$(default_branch "$GH_REPO")
   [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(git symbolic-ref --short HEAD 2> /dev/null)
-  if [ -f "$WORKFLOW_FILE" ] && ! grep -q "branches: \[$DEFAULT_BRANCH\]" "$WORKFLOW_FILE" && [ "$DRY" = 0 ]; then
-    sed -i.bak -E "s/branches: \[[^]]*\]/branches: [$DEFAULT_BRANCH]/" "$WORKFLOW_FILE" && rm -f "$WORKFLOW_FILE.bak"
+  if [ -f "$WORKFLOW_FILE" ] && [ "$DRY" = 0 ] \
+    && ! grep -q "branches: \[$DEFAULT_BRANCH\]" "$WORKFLOW_FILE"; then
+    sed -i.bak -E "s/branches: \[[^]]*\]/branches: [$DEFAULT_BRANCH]/" "$WORKFLOW_FILE" \
+      && rm -f "$WORKFLOW_FILE.bak"
     ok "Pointed the workflow at $DEFAULT_BRANCH, the repository's default branch"
   fi
   gap
@@ -896,9 +978,10 @@ adopt_existing_repo() {
   GH_REMOTE=github
   [ "$DRY" = 1 ] && return 0
   spin "Fetching $GH_REPO" git fetch github || return 1
-  head_remote=$(git rev-parse --verify -q "github/$(gh repo view "$GH_REPO" --json defaultBranchRef --jq .defaultBranchRef.name 2> /dev/null)")
+  head_remote=$(git rev-parse --verify -q "github/$(default_branch "$GH_REPO")")
   if [ -z "$head_remote" ] || [ "$empty" = true ]; then
-    act "Pushing $(git symbolic-ref --short HEAD) to the empty repository" git push -u github HEAD || return 1
+    act "Pushing $(git symbolic-ref --short HEAD) to the empty repository" \
+      git push -u github HEAD || return 1
   elif git merge-base --is-ancestor "$head_remote" HEAD; then
     say "GitHub has an older copy of this history: pushing brings it up to date."
     act "Pushing $(git symbolic-ref --short HEAD) to $GH_REPO" git push github HEAD || return 1
@@ -907,8 +990,10 @@ adopt_existing_repo() {
     act "Fast-forwarding to GitHub's history" git merge --ff-only "$head_remote" || return 1
   else
     gap
-    panel "Different histories" "$GH_REPO has commits this site's code doesn't, and the other way round. Pushing would mean overwriting someone's work, so setup won't." \
-      "Pick another name, or merge the two histories by hand and run setup again."
+    panel "Different histories" \
+      "$GH_REPO has commits this site's code doesn't, and the other way round. Pushing would" \
+      "mean overwriting someone's work, so setup won't." \
+      "" "Pick another name, or merge the two histories by hand and run setup again."
     git remote remove github 2> /dev/null
     GH_REMOTE=""
     return 1
@@ -923,7 +1008,10 @@ has_secret() {
 
 stage_token() {
   header 7 "Add the Pantheon token"
-  panel "Why" "drupal-qa logs in to Pantheon with this token to build multidevs and run Drush. It's stored as an encrypted GitHub secret and acts as your Pantheon account, so keep it to repositories you trust."
+  panel "Why" \
+    "drupal-qa logs in to Pantheon with this token to build multidevs and run Drush. It's stored" \
+    "as an encrypted GitHub secret and acts as your Pantheon account, so keep it to repositories" \
+    "you trust."
   gap
   if has_secret PANTHEON_MACHINE_TOKEN; then
     ok "$GH_REPO already has PANTHEON_MACHINE_TOKEN"
@@ -947,7 +1035,8 @@ stage_token() {
     fi
   done
   if [ "$DRY" = 1 ]; then
-    printf '  %s◇ would%s set the GitHub secret PANTHEON_MACHINE_TOKEN on %s\n' "$YELLOW" "$R" "$GH_REPO"
+    printf '  %s◇ would%s set the GitHub secret PANTHEON_MACHINE_TOKEN on %s\n' \
+      "$YELLOW" "$R" "$GH_REPO"
   else
     spin "Saving PANTHEON_MACHINE_TOKEN on $GH_REPO" set_secret PANTHEON_MACHINE_TOKEN || exit 1
     DONE_NOTES+=("Added the PANTHEON_MACHINE_TOKEN secret")
@@ -958,18 +1047,24 @@ stage_token() {
 }
 
 # The token goes to curl on stdin, never on its command line.
+# shellcheck disable=SC2329 # run through spin
 validate_token() {
   local code
-  code=$(printf '{"machine_token":"%s","client":"terminus"}' "$1" | curl -s -o /dev/null -w '%{http_code}' \
-    -X POST -H 'Content-Type: application/json' --data @- https://terminus.pantheon.io/api/authorize/machine-token)
+  code=$(printf '{"machine_token":"%s","client":"terminus"}' "$1" \
+    | curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+      --data @- https://terminus.pantheon.io/api/authorize/machine-token)
   [ "$code" = 200 ]
 }
 
+# shellcheck disable=SC2329 # run through spin
 set_secret() { printf '%s' "$TOKEN" | gh secret set "$1" -R "$GH_REPO"; }
 
 stage_ssh() {
   header 8 "Add an SSH key"
-  panel "Why" "drupal-qa pushes code to Pantheon's git over SSH. Setup makes a key just for this, adds its public half to your Pantheon account, and saves the private half as a GitHub secret. Terminus needs RSA."
+  panel "Why" \
+    "drupal-qa pushes code to Pantheon's git over SSH. Setup makes a key just for this, adds its" \
+    "public half to your Pantheon account, and saves the private half as a GitHub secret." \
+    "Terminus needs RSA."
   gap
   if has_secret PANTHEON_SSH_KEY; then
     ok "$GH_REPO already has PANTHEON_SSH_KEY"
@@ -980,11 +1075,16 @@ stage_ssh() {
     ok "Reusing your drupal-qa key: $KEY_PATH"
   else
     [ -f "$KEY_PATH" ] && KEY_PATH="$HOME/.ssh/drupal_qa_rsa"
-    act "Making an RSA key at $KEY_PATH" ssh-keygen -t rsa -b 4096 -m PEM -N "" -C "drupal-qa" -f "$KEY_PATH" || exit 1
+    act "Making an RSA key at $KEY_PATH" \
+      ssh-keygen -t rsa -b 4096 -m PEM -N "" -C "drupal-qa" -f "$KEY_PATH" || exit 1
   fi
   local fp=""
-  [ -f "$KEY_PATH.pub" ] && fp=$(ssh-keygen -l -E md5 -f "$KEY_PATH.pub" 2> /dev/null | awk '{print $2}' | sed 's/^MD5://; s/://g')
-  if [ -n "$fp" ] && terminus ssh-key:list --format=list --field=id 2> /dev/null | grep -qi "$fp"; then
+  if [ -f "$KEY_PATH.pub" ]; then
+    fp=$(ssh-keygen -l -E md5 -f "$KEY_PATH.pub" 2> /dev/null \
+      | awk '{print $2}' | sed 's/^MD5://; s/://g')
+  fi
+  if [ -n "$fp" ] \
+    && terminus ssh-key:list --format=list --field=id 2> /dev/null | grep -qi "$fp"; then
     ok "Pantheon already has this key"
   else
     gap
@@ -999,7 +1099,9 @@ stage_ssh() {
   if [ "$DRY" = 1 ]; then
     printf '  %s◇ would%s set the GitHub secret PANTHEON_SSH_KEY on %s\n' "$YELLOW" "$R" "$GH_REPO"
   else
-    spin "Saving PANTHEON_SSH_KEY on $GH_REPO" sh -c 'gh secret set PANTHEON_SSH_KEY -R "$1" < "$2"' _ "$GH_REPO" "$KEY_PATH" || exit 1
+    # shellcheck disable=SC2016 # $1 and $2 belong to the inner sh.
+    spin "Saving PANTHEON_SSH_KEY on $GH_REPO" \
+      sh -c 'gh secret set PANTHEON_SSH_KEY -R "$1" < "$2"' _ "$GH_REPO" "$KEY_PATH" || exit 1
     DONE_NOTES+=("Added the PANTHEON_SSH_KEY secret")
   fi
   gap
@@ -1012,8 +1114,10 @@ offer_first_test() {
   local file="tests/behat/features/$SITE.feature" phrase
   [ -f "$file" ] && return 1
   gap
-  panel "Your first test" "drupal-qa's own tests check what every Drupal site needs. Tests of your own check what this site promises: the contact form, a key page, the words on the home page." \
-    "Setup can write a first one now. Type a phrase that must always be on the home page."
+  panel "Your first test" \
+    "drupal-qa's own tests check what every Drupal site needs. Tests of your own check what this" \
+    "site promises: the contact form, a key page, the words on the home page." \
+    "" "Setup can write a first one now. Type a phrase that must always be on the home page."
   gap
   confirm "Add a first test of your own?" y || return 1
   ask phrase "A phrase on the home page:"
@@ -1039,7 +1143,9 @@ EOF
 
 stage_pr() {
   header 9 "Open the pull request"
-  panel "Why" "The pull request is drupal-qa's first run: the checks run, Pantheon builds a multidev for it, and the results land on the pull request as a comment."
+  panel "Why" \
+    "The pull request is drupal-qa's first run: the checks run, Pantheon builds a multidev for" \
+    "it, and the results land on the pull request as a comment."
   gap
   local files=() f changed
   for f in composer.json composer.lock "$WORKFLOW_FILE" .github/workflows tests/behat; do
@@ -1057,29 +1163,43 @@ stage_pr() {
   else
     if offer_first_test; then
       files+=(tests/behat)
-      [ "$DRY" = 1 ] && changed=$(printf '%s\n?? tests/behat/features/%s.feature' "$changed" "$SITE")
+      [ "$DRY" = 1 ] \
+        && changed=$(printf '%s\n?? tests/behat/features/%s.feature' "$changed" "$SITE")
     fi
     [ "$DRY" = 1 ] || changed=$(git status --porcelain -- "${files[@]}" 2> /dev/null)
   fi
   gap
   say "${B}This pull request will contain:${R}"
-  printf '%s\n' "$changed" | sed -E "s/^ ?M /    ${YELLOW}modified${R}  /; s/^ ?A /    ${GREEN}added${R}     /; s/^\?\? /    ${GREEN}added${R}     /; s/^ ?D /    ${RED}removed${R}   /"
+  printf '%s\n' "$changed" | sed -E \
+    -e "s/^ ?M /    ${YELLOW}modified${R}  /" \
+    -e "s/^ ?A /    ${GREEN}added${R}     /" \
+    -e "s/^\?\? /    ${GREEN}added${R}     /" \
+    -e "s/^ ?D /    ${RED}removed${R}   /"
   gap
   local branch=chore/drupal-qa n=2
-  while git rev-parse --verify -q "$branch" > /dev/null || git ls-remote --exit-code --heads "$GH_REMOTE" "$branch" > /dev/null 2>&1; do
+  while git rev-parse --verify -q "$branch" > /dev/null \
+    || git ls-remote --exit-code --heads "$GH_REMOTE" "$branch" > /dev/null 2>&1; do
     branch="chore/drupal-qa-$n"; n=$((n + 1))
   done
-  confirm "Commit to ${B}$branch${R}, push it and open the pull request?" y || { TODO_NOTES+=("Commit these files and open a pull request"); gap; pause; return; }
+  if ! confirm "Commit to ${B}$branch${R}, push it and open the pull request?" y; then
+    TODO_NOTES+=("Commit these files and open a pull request")
+    gap
+    pause
+    return
+  fi
   BRANCH=$branch
   act "Creating the branch $BRANCH" git checkout -q -b "$BRANCH" || exit 1
   act "Staging the files" git add -A -- "${files[@]}" || exit 1
-  act "Committing" git commit -q -m "chore: add drupal-qa" -m "Checks on every pull request, a Pantheon multidev per pull request with smoke tests, and deploys to dev on merge. See $DOCS_URL." || exit 1
+  local body what
+  what="a Pantheon multidev per pull request with smoke tests, and deploys to dev on merge"
+  act "Committing" git commit -q -m "chore: add drupal-qa" \
+    -m "Checks on every pull request, $what. See $DOCS_URL." || exit 1
   act "Pushing $BRANCH to $GH_REPO" git push -q -u "$GH_REMOTE" "$BRANCH" || exit 1
-  local body
-  body="Adds [drupal-qa]($DOCS_URL): checks on every pull request, a Pantheon multidev per pull request with smoke tests, and deploys to dev on merge.
+  body="Adds [drupal-qa]($DOCS_URL): checks on every pull request, $what.
 
 Set up with \`drupal-qa-setup\`."
-  if act "Opening the pull request" gh pr create -R "$GH_REPO" --base "$DEFAULT_BRANCH" --head "$BRANCH" --title "chore: add drupal-qa" --body "$body"; then
+  if act "Opening the pull request" gh pr create -R "$GH_REPO" --base "$DEFAULT_BRANCH" \
+    --head "$BRANCH" --title "chore: add drupal-qa" --body "$body"; then
     [ "$DRY" = 0 ] && PR_URL=$(grep -o 'https://github.com/[^ ]*/pull/[0-9]*' "$LAST_LOG" | tail -1)
     [ -n "$PR_URL" ] && ok "Opened $B$PR_URL$R"
     DONE_NOTES+=("Opened the pull request")
@@ -1093,17 +1213,23 @@ Set up with \`drupal-qa-setup\`."
 stage_run() {
   header 10 "Watch the first run"
   if [ "$DRY" = 1 ] || [ -z "$BRANCH" ]; then
-    panel "First run" "Once the pull request is open, its run appears under Actions. The first one takes about ten minutes, most of it Pantheon building the multidev."
+    panel "First run" \
+      "Once the pull request is open, its run appears under Actions. The first one takes about" \
+      "ten minutes, most of it Pantheon building the multidev."
     gap
     pause
     return
   fi
-  panel "What's happening" "GitHub runs the checks while Pantheon builds a multidev for this pull request. drupal-qa waits until the multidev serves the new code, then updates the database, imports config and runs the smoke tests. Press q to stop watching; the run carries on."
+  panel "What's happening" \
+    "GitHub runs the checks while Pantheon builds a multidev for this pull request. drupal-qa" \
+    "waits until the multidev serves the new code, then updates the database, imports config and" \
+    "runs the smoke tests. Press q to stop watching; the run carries on."
   gap
   local id="" i=0
   hide_cursor
   while [ -z "$id" ] && [ "$i" -lt 60 ]; do
-    id=$(gh run list -R "$GH_REPO" --branch "$BRANCH" --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2> /dev/null)
+    id=$(gh run list -R "$GH_REPO" --branch "$BRANCH" --limit 1 --json databaseId \
+      --jq '.[0].databaseId // empty' 2> /dev/null)
     printf '\r\033[K  %s%s%s Waiting for GitHub to start the run' "$CYAN" "${FRAMES[i % 10]}" "$R"
     i=$((i + 1))
     sleep 1
@@ -1131,7 +1257,8 @@ watch_run() {
   while true; do
     if [ $((tick % 8)) = 0 ]; then
       gh run view "$id" -R "$GH_REPO" --json status,conclusion,jobs \
-        --jq '"RUN\t\(.status)\t\(.conclusion)", (.jobs[] | "\(.name)\t\(.status)\t\(.conclusion)")' > "$LOGDIR/run" 2> /dev/null
+        --jq '"RUN\t\(.status)\t\(.conclusion)",
+          (.jobs[] | "\(.name)\t\(.status)\t\(.conclusion)")' > "$LOGDIR/run" 2> /dev/null
     fi
     [ "$lines" -gt 0 ] && printf '\033[%dA\033[J' "$lines"
     lines=0
@@ -1150,12 +1277,17 @@ watch_run() {
       printf '\033[K    %s %s\n' "$icon" "$name"
       lines=$((lines + 1))
     done < "$LOGDIR/run"
-    printf '\033[K\n\033[K  %s%dm %02ds%s %s\n' "$GRAY" $(((SECONDS - start) / 60)) $(((SECONDS - start) % 60)) "$R" "$GRAY(q to stop watching)$R"
+    printf '\033[K\n\033[K  %s%dm %02ds%s %s\n' "$GRAY" $(((SECONDS - start) / 60)) \
+      $(((SECONDS - start) % 60)) "$R" "$GRAY(q to stop watching)$R"
     lines=$((lines + 2))
     [ "$status" = completed ] && break
     key=""
     IFS= read -rsn1 -t 1 key < /dev/tty
-    [ "$key" = q ] && { show_cursor; muted "Stopped watching. The run carries on: $RUN_URL"; return; }
+    if [ "$key" = q ]; then
+      show_cursor
+      muted "Stopped watching. The run carries on: $RUN_URL"
+      return
+    fi
     tick=$((tick + 1))
   done
   show_cursor
@@ -1166,7 +1298,8 @@ watch_run() {
     warn "The run finished: $conclusion. The pull request comment says which step and why."
   fi
   local comment
-  comment=$(gh api "repos/$GH_REPO/issues/${PR_URL##*/}/comments" --jq '.[] | select(.body | startswith("<!-- drupal-qa -->")) | .body' 2> /dev/null | tail -40)
+  comment=$(gh api "repos/$GH_REPO/issues/${PR_URL##*/}/comments" \
+    --jq '.[] | select(.body | startswith("<!-- drupal-qa -->")) | .body' 2> /dev/null | tail -40)
   ENV_URL=$(printf '%s' "$comment" | grep -o 'https://[a-z0-9-]*\.pantheonsite\.io' | head -1)
   if [ -n "$comment" ]; then
     gap
