@@ -1246,6 +1246,7 @@ stage_run() {
   fi
   RUN_URL="https://github.com/$GH_REPO/actions/runs/$id"
   ok "Run started: $RUN_URL"
+  open_url "$RUN_URL"
   gap
   watch_run "$id"
   gap

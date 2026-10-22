@@ -210,6 +210,7 @@ if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; w
   c "made an RSA key" sh -c "head -1 '$HOME/.ssh/drupal_qa' | grep -q 'RSA PRIVATE KEY'"
   c "added the key to Pantheon" test -s "$FAKE_STATE/key-added"
   c "opened the pull request" logged 'gh pr create -R acme-org/acme-site --base master --head chore/drupal-qa'
+  c "opened the run in the browser" logged 'open https://github.com/acme-org/acme-site/actions/runs/4242'
   c "never printed the token" sh -c "! grep -q 'good-token' '$T/transcript'"
   c "never force-pushed" sh -c "! grep -q -- '--force' '$FAKE_LOG'"
   c "drew the job board's icons intact" has_bytes '\342\234\223\033\\[0m Plan' "$T/transcript"
