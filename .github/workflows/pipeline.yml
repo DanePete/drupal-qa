@@ -78,6 +78,8 @@ jobs:
       config: ${{ steps.plan.outputs.config }}
       updatedb: ${{ steps.plan.outputs.updatedb }}
       cim: ${{ steps.plan.outputs.cim }}
+      status: ${{ steps.plan.outputs.status }}
+      watchdog: ${{ steps.plan.outputs.watchdog }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -103,7 +105,7 @@ jobs:
           out() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
           words() { echo "$1" | tr ',[:upper:]' ' [:lower:]' | tr -s ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' '; }
 
-          CHECKS="phpcs phpstan yamllint audit secrets phpunit behat config"
+          CHECKS="phpcs phpstan yamllint audit secrets phpunit behat config status watchdog"
           STEPS="$CHECKS updatedb cim"
           REQUIRED=" $(words "$REQUIRED")"
           SKIP=" $(words "$SKIP")"
@@ -182,11 +184,14 @@ jobs:
           m[config]=$(mode config warn)
           m[updatedb]=$(mode updatedb block)
           m[cim]=$(mode cim block)
+          m[status]=$(mode status warn)
+          m[watchdog]=$(mode watchdog warn)
 
           note=()
           if [ -z "$code_paths" ]; then m[phpcs]=off; m[phpstan]=off; note+=("No custom modules or themes found: PHPCS and PHPStan have nothing to check."); fi
           if [ -z "$config_dir" ]; then m[yamllint]=off; note+=("No config sync directory found: YAML lint skipped."); fi
-          if [ "$deploy" != true ]; then m[behat]=off; m[config]=off; m[updatedb]=off; m[cim]=off; fi
+          if [ "$deploy" != true ]; then m[behat]=off; m[config]=off; m[updatedb]=off; m[cim]=off; m[status]=off; m[watchdog]=off; fi
+          if [ "${m[behat]}" = off ]; then m[watchdog]=off; fi
           if [ "$event" = pr-closed ]; then for k in "${!m[@]}"; do m[$k]=off; done; fi
 
           static=false
@@ -202,7 +207,7 @@ jobs:
           {
             echo "event=$event env=${env_name:-none} code_host=$CODE_HOST php=$php commerce=$commerce"
             echo "code paths: ${code_paths:-none}  config: ${config_dir:-none}"
-            for k in phpcs phpstan yamllint audit secrets phpunit updatedb cim config behat; do printf '  %-9s %s\n' "$k" "${m[$k]}"; done
+            for k in phpcs phpstan yamllint audit secrets phpunit updatedb cim config status behat watchdog; do printf '  %-9s %s\n' "$k" "${m[$k]}"; done
             for n in "${note[@]}"; do echo "note: $n"; done
           }
 
@@ -607,6 +612,13 @@ jobs:
         if: needs.plan.outputs.cim != 'off'
         run: terminus drush "$SITE.$ENV_NAME" -- config:import -y
 
+      - name: Deploy hooks
+        id: deployhooks
+        if: needs.plan.outputs.cim != 'off'
+        # hook_deploy_NAME() runs after config import, the way drush deploy
+        # runs it on live; without this a multidev never runs them.
+        run: terminus drush "$SITE.$ENV_NAME" -- deploy:hook -y
+
       - name: Cache rebuild
         if: needs.plan.outputs.updatedb != 'off' || needs.plan.outputs.cim != 'off'
         run: terminus drush "$SITE.$ENV_NAME" -- cache:rebuild
@@ -636,13 +648,42 @@ jobs:
             exit 1
           fi
 
+      - name: Status report
+        id: status
+        if: needs.plan.outputs.status != 'off'
+        continue-on-error: ${{ needs.plan.outputs.status != 'block' }}
+        run: |
+          # Errors on Drupal's status report: entity definitions that don't
+          # match, modules that need an update, missing PHP extensions. Drush
+          # exits 0 either way, so the JSON is what decides. Update
+          # availability and cron depend on the environment, not the code.
+          report=$(terminus drush "$SITE.$ENV_NAME" -- core:requirements --severity=2 --format=json \
+            --ignore=update_core,update_contrib,cron 2> /dev/null) || {
+            echo "::error title=Status report::Could not read the status report from $ENV_NAME."
+            exit 1
+          }
+          report=$(echo "$report" | grep -vE '^[[:space:]]*\[(notice|info|warning|success|debug)\]')
+          [ -n "$report" ] || report='[]'
+          rows=$(echo "$report" | jq 'length' 2> /dev/null) || {
+            echo "::error title=Status report::Unexpected status report output from $ENV_NAME:"
+            echo "$report"
+            exit 1
+          }
+          if [ "$rows" = 0 ]; then
+            echo "The status report on $ENV_NAME has no errors."
+          else
+            echo "::error title=Status report::The status report on $ENV_NAME has $rows error(s). See /admin/reports/status there."
+            echo "$report" | jq -r 'to_entries[] | "- \(.value.title // .key): \(.value.value // "" | tostring | gsub("<[^>]*>"; ""))"'
+            exit 1
+          fi
+
       - name: Record results
         id: results
         if: always()
         run: |
           deliver="${{ steps.deliver.outcome }}"
           if [ "$CODE_HOST" = github-app ]; then deliver="${{ steps.created.outcome }}"; fi
-          echo "results=deliver=$deliver converge=${{ steps.converge.outcome }} updatedb=${{ steps.updatedb.outcome }} cim=${{ steps.cim.outcome }} config=${{ steps.config.outcome }}" >> "$GITHUB_OUTPUT"
+          echo "results=deliver=$deliver converge=${{ steps.converge.outcome }} updatedb=${{ steps.updatedb.outcome }} cim=${{ steps.cim.outcome }} deployhooks=${{ steps.deployhooks.outcome }} config=${{ steps.config.outcome }} status=${{ steps.status.outcome }}" >> "$GITHUB_OUTPUT"
 
   behat:
     name: Behat
@@ -712,6 +753,21 @@ jobs:
           terminus drush:aliases --only="$SITE" --type=yml > /dev/null
           vendor/bin/drush "@pantheon.$SITE.$ENV_NAME" status --field=bootstrap
 
+      - name: Note the newest log entry
+        id: wdstart
+        if: needs.plan.outputs.watchdog != 'off'
+        run: |
+          # PHP errors logged from here on came from the tests' own requests
+          # (or from cron running at the same moment). No dblog, no check.
+          php_code='echo \Drupal::moduleHandler()->moduleExists("dblog") ? "DQA:" . (int) \Drupal::database()->query("SELECT MAX(wid) FROM {watchdog}")->fetchField() : "DQA:none";'
+          out=$(vendor/bin/drush "@pantheon.$SITE.$ENV_NAME" php:eval "$php_code" 2> /dev/null | grep -o 'DQA:[a-z0-9]*' | tail -1)
+          wid=${out#DQA:}
+          if [ "$wid" = none ] || [ -z "$wid" ]; then
+            echo "dblog is not enabled on $ENV_NAME, so PHP errors can't be read; that check is skipped."
+          else
+            echo "wid=$wid" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Behat
         id: behat
         continue-on-error: ${{ needs.plan.outputs.behat != 'block' }}
@@ -765,16 +821,55 @@ jobs:
           } > behat.drupal-qa.yml
           suite=(--suite=default)
           if [ "$COMMERCE" = true ]; then suite=(); fi
-          vendor/bin/behat --config=behat.drupal-qa.yml "${suite[@]}" --tags='~@wip' --format=progress --strict --no-interaction 2>&1 | tee "$RUNNER_TEMP/behat.txt"
+          # Features tagged with a module run only where that module is
+          # enabled, so a site without webforms never fails a webform test.
+          modules=" $(vendor/bin/drush "@pantheon.$SITE.$ENV_NAME" pm:list --status=enabled --type=module --format=list 2> /dev/null | tr '\n' ' ') "
+          tags='~@wip'
+          for pair in webform:webform search:search sitemap:simple_sitemap,xmlsitemap metatag:metatag; do
+            tag=${pair%%:*}; mods=${pair#*:}; on=false
+            for mod in ${mods//,/ }; do [[ "$modules" == *" $mod "* ]] && on=true; done
+            if [ "$on" = false ]; then tags="$tags&&~@$tag"; else echo "Running the @$tag tests: the module is enabled."; fi
+          done
+          vendor/bin/behat --config=behat.drupal-qa.yml "${suite[@]}" --tags="$tags" --format=progress --strict --no-interaction 2>&1 | tee "$RUNNER_TEMP/behat.txt"
           if ! grep -qE '^[1-9][0-9]* scenarios? \(' "$RUNNER_TEMP/behat.txt"; then
             echo "::error title=Behat::Behat ran no scenarios."
+            exit 1
+          fi
+
+      - name: PHP errors logged
+        id: watchdog
+        if: always() && steps.wdstart.outputs.wid != '' && steps.behat.outcome != 'skipped'
+        continue-on-error: ${{ needs.plan.outputs.watchdog != 'block' }}
+        env:
+          WID: ${{ steps.wdstart.outputs.wid }}
+        run: |
+          # shellcheck disable=SC2016 # PHP, not shell: its $ stays literal.
+          # PHP warnings and errors logged while Behat ran: notices that never
+          # turn into a 500 still mean broken code. Cron can run meanwhile on
+          # Pantheon, so the messages are printed for a person to judge.
+          php_code='$rows = \Drupal::database()->query("SELECT message, variables, severity FROM {watchdog} WHERE wid > :wid AND type = :type AND severity <= 4 ORDER BY wid LIMIT 20", [":wid" => '"$WID"', ":type" => "php"])->fetchAll(); foreach ($rows as $r) { $v = @unserialize((string) $r->variables, ["allowed_classes" => FALSE]); echo "DQA: " . strip_tags(strtr((string) $r->message, is_array($v) ? array_map("strval", $v) : [])) . "\n"; } echo "DQA-COUNT:" . count($rows) . "\n";'
+          out=$(vendor/bin/drush "@pantheon.$SITE.$ENV_NAME" php:eval "$php_code" 2> /dev/null) || {
+            echo "::error title=PHP errors logged::Could not read the log on $ENV_NAME."
+            exit 1
+          }
+          count=$(echo "$out" | grep -o 'DQA-COUNT:[0-9]*' | tail -1 | cut -d: -f2)
+          if [ -z "$count" ]; then
+            echo "::error title=PHP errors logged::Unexpected output reading the log on $ENV_NAME:"
+            echo "$out"
+            exit 1
+          fi
+          if [ "$count" = 0 ]; then
+            echo "No PHP warnings or errors were logged on $ENV_NAME while the tests ran."
+          else
+            echo "::error title=PHP errors logged::$count PHP warning(s) or error(s) were logged on $ENV_NAME while the tests ran."
+            echo "$out" | grep '^DQA: ' | sed 's/^DQA: /- /' | cut -c1-400
             exit 1
           fi
 
       - name: Record results
         id: results
         if: always()
-        run: echo "results=behat=${{ steps.behat.outcome }}" >> "$GITHUB_OUTPUT"
+        run: echo "results=behat=${{ steps.behat.outcome }} watchdog=${{ steps.watchdog.outcome }}" >> "$GITHUB_OUTPUT"
 
   cleanup:
     name: Delete multidev
@@ -838,17 +933,24 @@ jobs:
           M_CIM: ${{ needs.plan.outputs.cim }}
           M_CONFIG: ${{ needs.plan.outputs.config }}
           M_BEHAT: ${{ needs.plan.outputs.behat }}
+          M_STATUS: ${{ needs.plan.outputs.status }}
+          M_WATCHDOG: ${{ needs.plan.outputs.watchdog }}
         run: |
           declare -A r
           for pair in $STATIC $TESTS $DEPLOY $BEHAT; do r[${pair%%=*}]=${pair#*=}; done
           declare -A label=([phpcs]="PHPCS" [phpstan]="PHPStan" [yamllint]="YAML lint" [audit]="Composer audit"
             [secrets]="Secret scan" [phpunit]="PHPUnit" [deliver]="Deliver code" [converge]="Serving this commit"
-            [updatedb]="Database updates" [cim]="Config import" [config]="Config status" [behat]="Behat")
+            [updatedb]="Database updates" [cim]="Config import" [deployhooks]="Deploy hooks" [config]="Config status"
+            [status]="Status report" [behat]="Behat" [watchdog]="PHP errors logged")
           mode_of() { local v="M_${1^^}"; echo "${!v:-block}"; }
 
           rows=()
-          for k in phpcs phpstan yamllint audit secrets phpunit deliver converge updatedb cim config behat; do
-            case $k in deliver|converge) [ "$DEPLOYING" = true ] || continue; mode=block ;; *) mode=$(mode_of "$k") ;; esac
+          for k in phpcs phpstan yamllint audit secrets phpunit deliver converge updatedb cim deployhooks config status behat watchdog; do
+            case $k in
+              deliver|converge) [ "$DEPLOYING" = true ] || continue; mode=block ;;
+              deployhooks) mode=$(mode_of cim) ;;
+              *) mode=$(mode_of "$k") ;;
+            esac
             outcome=${r[$k]:-}
             if [ "$mode" = off ]; then
               continue
