@@ -21,8 +21,10 @@ CONSTRAINT="^2.1"
 WORKFLOW_USES="DanePete/drupal-qa/.github/workflows/pipeline.yml@v2"
 WORKFLOW_FILE=".github/workflows/drupal-qa.yml"
 DOCS_URL="https://github.com/DanePete/drupal-qa"
-TOKEN_URL="https://dashboard.pantheon.io/personal-settings/personal-access-token"
-SSH_KEYS_URL="https://dashboard.pantheon.io/personal-settings/ssh-keys"
+# Pantheon moved user settings under each person's workspace in October 2026;
+# the old deep links now error, and this one redirects to the right place.
+TOKEN_URL="https://dashboard.pantheon.io/personal-settings"
+SSH_KEYS_URL="$TOKEN_URL"
 V1_WORKFLOWS="pr-checks.yml multidev.yml multidev-cleanup.yml deploy-pantheon.yml"
 
 DRY=0
@@ -532,7 +534,7 @@ stage_tools() {
       panel "Log in to Terminus" \
         "Setup needs a Pantheon token. Make one now: it opens in your browser. The same token" \
         "becomes the PANTHEON_MACHINE_TOKEN secret in a later stage." \
-        "" "Avatar menu, User settings, Personal Access Tokens, Add token. Name it after the" \
+        "" "On User settings, choose Personal Access Tokens, then Add token. Name it after the" \
         "repository and copy it: Pantheon shows it once."
       gap
       open_url "$TOKEN_URL"
@@ -1021,7 +1023,7 @@ stage_token() {
     confirm "Use the token you logged Terminus in with a moment ago?" y || TOKEN=""
   fi
   while [ -z "$TOKEN" ]; do
-    step "Avatar menu, ${B}User settings${R}, ${B}Personal Access Tokens${R}, ${B}Add token${R}."
+    step "On ${B}User settings${R}, choose ${B}Personal Access Tokens${R}, then ${B}Add token${R}."
     step "Name it after the repository and copy it. Pantheon shows it once."
     step "New tokens expire after 90 days; you'll replace this secret then."
     gap
@@ -1093,7 +1095,7 @@ stage_ssh() {
       act "Adding the key to Pantheon" terminus ssh-key:add "$KEY_PATH.pub" || exit 1
       DONE_NOTES+=("Added an SSH key to your Pantheon account")
     else
-      TODO_NOTES+=("Add $KEY_PATH.pub at $SSH_KEYS_URL")
+      TODO_NOTES+=("Add $KEY_PATH.pub at $SSH_KEYS_URL, under SSH Keys")
     fi
   fi
   if [ "$DRY" = 1 ]; then
