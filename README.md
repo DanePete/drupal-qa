@@ -8,10 +8,16 @@ pull request.
 
 ## TL;DR
 
-Run this in the site's folder, or in an empty one to pull a site down from Pantheon:
+In the site's folder:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/DanePete/drupal-qa/main/bin/drupal-qa-setup)
+```
+
+Or starting from nothing, in a new folder; the wizard offers to pull the site down from Pantheon:
+
+```bash
+mkdir -p ~/drupal-qa-setup && cd ~/drupal-qa-setup && bash <(curl -fsSL https://raw.githubusercontent.com/DanePete/drupal-qa/main/bin/drupal-qa-setup)
 ```
 
 The setup wizard installs the package, writes the workflow, connects GitHub, sets both
