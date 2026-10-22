@@ -698,7 +698,7 @@ stage_package() {
   core=$(lock_version drupal/core)
   [ "$INSTALLED" = v2 ] || wants+=("$PACKAGE:$CONSTRAINT")
   if [ -z "$(lock_version drupal/core-dev)" ] && [ -n "$core" ]; then
-    wants+=("drupal/core-dev:^$core")
+    wants+=("drupal/core-dev:~$core")
     muted "Drupal's own test tools (drupal/core-dev $core) come along too: PHPUnit needs them."
   fi
   if [ ${#wants[@]} = 0 ]; then

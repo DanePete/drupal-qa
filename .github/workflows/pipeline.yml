@@ -398,7 +398,7 @@ jobs:
           # PHPUnit Symfony's bridge can't run, and a PHP fatal instead of a test.
           if ! grep -q '"name": "drupal/core-dev"' composer.lock; then
             core=$(jq -r '[.packages[] | select(.name == "drupal/core")][0].version // empty' composer.lock)
-            echo "::error title=PHPUnit::drupal/core-dev is missing. Drupal's test classes need it. Run: composer require --dev drupal/core-dev:^${core:-<your core version>}"
+            echo "::error title=PHPUnit::drupal/core-dev is missing. Drupal's test classes need it. Run: composer require --dev drupal/core-dev:~${core:-<your core version>}"
             exit 1
           fi
           # A project's own phpunit.xml(.dist) wins; otherwise the package's.

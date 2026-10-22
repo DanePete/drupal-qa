@@ -173,7 +173,7 @@ if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; w
   c "cloned the site from Pantheon" test -d "$site/.git"
   c "raised config.platform.php to 8.3" grep -q '"php": "8.3"' "$site/composer.json"
   c "required thronedigital/drupal-qa" grep -q 'thronedigital/drupal-qa' "$site/composer.json"
-  c "required drupal/core-dev matched to core" grep -q '"drupal/core-dev": "^11.4.8"' "$site/composer.json"
+  c "required drupal/core-dev matched to core" grep -q '"drupal/core-dev": "~11.4.8"' "$site/composer.json"
   c "created acme-org/acme-site with master" git --git-dir="$repo" rev-parse --verify -q master
   c "pushed the branch chore/drupal-qa" git --git-dir="$repo" rev-parse --verify -q chore/drupal-qa
   c "the commit has the workflow" sh -c "git --git-dir='$repo' show chore/drupal-qa:.github/workflows/drupal-qa.yml | grep -q 'pantheon_site: acme-site'"
@@ -263,7 +263,7 @@ if scenario upgrade "drupal-qa v1 with its four workflows"; then
   unset FAKE_SECRETS
   repo="$FAKE_GH/acme-org/acme-site.git"
   c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
-  c "upgraded with -W, adding core-dev" grep -q 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:^11.4.8 -W' "$FAKE_LOG"
+  c "upgraded with -W, adding core-dev" grep -q 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:~11.4.8 -W' "$FAKE_LOG"
   c "the commit removes all four v1 workflows" sh -c "test \$(git --git-dir='$repo' show --name-status --format= chore/drupal-qa | grep -c '^D') = 4"
   c "the commit adds drupal-qa.yml" sh -c "git --git-dir='$repo' show --name-status --format= chore/drupal-qa | grep -q 'A.*drupal-qa.yml'"
   done_scenario
@@ -306,7 +306,7 @@ if scenario taken "the name is taken by different history: refuse, pick another;
   rc=$?
   unset FAKE_COMPOSER_FAIL_ONCE
   c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
-  c "retried Composer with -W after it failed" grep -q 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:^11.4.8 -W' "$FAKE_LOG"
+  c "retried Composer with -W after it failed" grep -q 'composer require --dev thronedigital/drupal-qa:^2.1 drupal/core-dev:~11.4.8 -W' "$FAKE_LOG"
   c "left the other repository's history alone" sh -c "test \"\$(git --git-dir='$FAKE_GH/acme-org/acme-site.git' log --format=%s master)\" = \"Someone else's work\""
   c "never force-pushed" sh -c "! grep -q -- '--force' '$FAKE_LOG'"
   c "created acme-site-2 instead" git --git-dir="$FAKE_GH/acme-org/acme-site-2.git" rev-parse --verify -q chore/drupal-qa
