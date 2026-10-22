@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake curl: only Pantheon's token check is faked; "good-token" is accepted.
+echo "curl (token check)" >> "$FAKE_LOG"
+body=$(cat); case "$body" in *'"good-token"'*) printf 200 ;; *) printf 401 ;; esac

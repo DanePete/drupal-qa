@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Fake Composer: edits composer.json/composer.lock the way a real require would.
+echo "composer $*" >> "$FAKE_LOG"
+case "$1" in
+  --version) echo "Composer version 2.8.0" ;;
+  config) php -r '$f="composer.json"; $j=json_decode(file_get_contents($f),true); $j["config"]["platform"]["php"]=$argv[1]; file_put_contents($f, json_encode($j, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");' "$3" ;;
+  require)
+    [ -n "${FAKE_COMPOSER_FAIL_ONCE:-}" ] && [ ! -f "$FAKE_STATE/composer-failed" ] && { touch "$FAKE_STATE/composer-failed"; echo "Your requirements could not be resolved" >&2; exit 2; }
+    php -r '$f="composer.json"; $j=json_decode(file_get_contents($f),true); unset($j["require-dev"]["thronedigital/drupal-qa"]); $j["require-dev"]["thronedigital/drupal-qa"]="^2.1"; file_put_contents($f, json_encode($j, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");
+      $l=json_decode(file_get_contents("composer.lock"),true); $l["packages-dev"]=array_values(array_filter($l["packages-dev"] ?? [], fn($p) => $p["name"] !== "thronedigital/drupal-qa")); $l["packages-dev"][]=["name"=>"thronedigital/drupal-qa","version"=>"v2.1.0"]; file_put_contents("composer.lock", json_encode($l, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");' ;;
+  *) echo "fake composer: unhandled $*" >&2; exit 3 ;;
+esac
