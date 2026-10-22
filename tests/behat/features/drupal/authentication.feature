@@ -16,3 +16,12 @@ Feature: Logging in
     Given I am logged in as a new user with the "authenticated" role
     When I go to "/user"
     Then I should get a 200 HTTP response
+
+  Scenario: The password reset form loads
+    When I go to "/user/password"
+    Then I should get a 200 HTTP response
+    And I should see the "form#user-pass" element
+
+  @api
+  Scenario: Registration is open only if the site allows it
+    Then registration matches the site's setting

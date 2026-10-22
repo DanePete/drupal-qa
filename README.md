@@ -5,15 +5,18 @@ environment, deployed and smoke-tested, with the results posted on the pull requ
 
 ## TL;DR
 
+Run this in the site's folder, or in an empty one to pull a site down from Pantheon:
+
 ```bash
-composer require --dev thronedigital/drupal-qa
-curl -fsSL --create-dirs -o .github/workflows/drupal-qa.yml \
-  https://raw.githubusercontent.com/DanePete/drupal-qa/main/examples/drupal-qa.yml   # set pantheon_site in it
-gh secret set PANTHEON_MACHINE_TOKEN                      # a Pantheon token
-gh secret set PANTHEON_SSH_KEY < ~/.ssh/drupal_qa         # an RSA key Pantheon knows
+bash <(curl -fsSL https://raw.githubusercontent.com/DanePete/drupal-qa/main/bin/drupal-qa-setup)
 ```
 
-Open a pull request. This shows up on it:
+The setup wizard installs the package, writes the workflow, connects GitHub, sets
+both secrets, adds the SSH key to Pantheon and opens the first pull request. It
+asks only what it can't work out, never prints a secret, never force-pushes, and
+`--dry-run` changes nothing. [What each stage does](#the-setup-wizard).
+
+This shows up on the pull request:
 
 ![The comment drupal-qa posts on a pull request: a link to the pull request's own Pantheon environment and a result for every step](docs/images/run-pr-comment.png)
 
@@ -24,15 +27,20 @@ Open a pull request. This shows up on it:
 | **Close** | `pr-N` is deleted. |
 
 Nothing blocks a merge until you list it under `required`, except PHPUnit, database
-updates and config import.
+updates, config import and deploy hooks.
 
 ## Setup, step by step
+
+The wizard does all of this; here it is by hand.
 
 ### 1. Add the package
 
 ```bash
-composer require --dev thronedigital/drupal-qa
+composer require --dev thronedigital/drupal-qa "drupal/core-dev:~11.4.8"   # your core version
 ```
+
+`drupal/core-dev` brings the PHPUnit tooling Drupal's own test classes need, matched
+to your core. Drupal 10 and 11 both work.
 
 ### 2. Add the workflow
 
@@ -94,12 +102,13 @@ The first run takes about ten minutes, mostly Pantheon building the multidev.
 
 ## Site only in Pantheon's git?
 
-Pull it down, add drupal-qa, push it to a new GitHub repository:
+The wizard handles this case: run it in an empty folder and pick the site. By hand,
+pull it down, add drupal-qa, push it to a new GitHub repository:
 
 ```bash
 terminus local:clone my-site && cd ~/pantheon-local-copies/my-site
 composer install
-composer require --dev thronedigital/drupal-qa
+composer require --dev thronedigital/drupal-qa "drupal/core-dev:~11.4.8"   # your core version
 curl -fsSL --create-dirs -o .github/workflows/drupal-qa.yml \
   https://raw.githubusercontent.com/DanePete/drupal-qa/main/examples/drupal-qa.yml
 # edit it: pantheon_site: my-site, branches: [master]
@@ -117,6 +126,27 @@ git push -u github chore/drupal-qa && gh pr create --fill
 From then on, changes start on GitHub and drupal-qa pushes merges to Pantheon's
 `master`. Leave SFTP mode off, and merge any dashboard or Autopilot commit into
 GitHub before the next deploy.
+
+## The setup wizard
+
+`bin/drupal-qa-setup` walks through ten stages, and each one checks what's already
+done before changing anything:
+
+| Stage | What it does |
+|---|---|
+| Tools | Checks git, Composer (or ddev), Terminus and the GitHub CLI, and logs them in. |
+| Project | Uses the current folder, or pulls a site down from Pantheon. |
+| Pantheon site | Finds the site from the git remote and checks it has multidev. |
+| Package | Installs drupal-qa and a matching `drupal/core-dev`; raises an old PHP platform pin; upgrades v1. |
+| Workflow | Writes `.github/workflows/drupal-qa.yml` for your default branch, showing it first. |
+| GitHub | Uses the connected repository, or creates one. A taken name is only adopted if its history lines up. |
+| Token | Opens Pantheon's token page, checks the token, saves it as a secret. |
+| SSH key | Makes an RSA key, adds the public half to Pantheon, saves the private half as a secret. |
+| Pull request | Optionally adds a first test of your own, then commits, pushes and opens the pull request. |
+| First run | Watches the run live and shows the results. |
+
+Run it again at any point: finished stages are found and skipped. Its scenario
+tests live in `tests/setup/run.sh`.
 
 ## Reference
 
@@ -143,8 +173,11 @@ GitHub before the next deploy.
 | Serving this commit | Waits until the environment serves a file from this exact commit | always |
 | Database updates | `drush updatedb` | **blocks** |
 | Config import | `drush config:import` | **blocks** |
+| Deploy hooks | `drush deploy:hook`, as `drush deploy` runs on live | **blocks** |
 | Config status | Config on the environment matches the code | warns |
+| Status report | No errors on Drupal's status report | warns |
 | Behat | The bundled smoke tests, against the real URL | warns |
+| PHP errors logged | No PHP warnings or errors logged while Behat ran (needs dblog) | warns |
 
 **Bundled PHPUnit tests**
 
@@ -158,10 +191,16 @@ GitHub before the next deploy.
 
 | Feature | Scenarios |
 |---|---|
-| Pages load | Front page is 200; a missing page is a real 404 |
-| Logging in | Login form loads; `/admin` is 403 for visitors; a logged-in user reaches `/user` |
+| Pages load | Front page is 200; a missing page is a real 404; every stylesheet and script on the front page loads; security headers are sent; the page can be cached; the newest page of each content type and vocabulary renders |
+| Logging in | Login form and password reset load; `/admin` is 403 for visitors; registration is open exactly when the site allows it; a logged-in user reaches `/user` |
 | Access control | `/admin/structure`, `/admin/config`, `/admin/people` are 403 for visitors; an administrator reaches `/admin` |
-| Shopping cart | Only with Commerce: `/cart` opens; a new customer's cart is empty |
+| Administration | Content, people and status report screens load; every content type's add form loads |
+| Safe roles | Visitors and plain users hold no restricted permission and no unfiltered text format |
+| Webforms | With Webform: each open webform page shows its submit button (never pressed) |
+| Search | With core Search: the search page answers |
+| XML sitemap | With Simple XML Sitemap or XML sitemap: `/sitemap.xml` is a sitemap |
+| Meta tags | With Metatag: the front page has a title and one canonical link |
+| Shopping cart | With Commerce: `/cart` opens; a new customer's cart is empty |
 
 Logged-in scenarios create a throwaway user through Drush and delete it after.
 
@@ -194,7 +233,7 @@ Logged-in scenarios create a throwaway user through Drush and delete it after.
 | `code_host` | `pantheon` | `pantheon` (drupal-qa pushes), `github-app` (Pantheon's app pushes), `none` (checks only). |
 | `multidev` | `true` | Needs a Gold workspace or higher. |
 
-Names: `phpcs phpstan yamllint audit secrets phpunit behat config`; `skip` also takes
+Names: `phpcs phpstan yamllint audit secrets phpunit behat config status watchdog`; `skip` also takes
 `updatedb` and `cim`. Detected, not configured: PHP version, paths, config directory,
 Commerce, site UUID. Your own `phpunit.xml`, `phpstan.neon` or `behat.yml` replaces
 the package's.
@@ -227,6 +266,8 @@ For your own step definitions, extend `DrupalQa\Behat\FeatureContext` and add a
 | still serves the old file after 15 minutes | `git commit --allow-empty -m "chore: re-sync" && git push` |
 | Log in to Pantheon fails on every run | The token expired. Make a new one and replace the secret. |
 | Composer audit ⚠️ every time | `composer audit` names the package; update it. |
+| drupal/core-dev is missing | `composer require --dev "drupal/core-dev:~<your core version>"`. |
+| The page can be cached for visitors fails | Set "Browser and proxy cache maximum age" at /admin/config/development/performance (15 minutes or more), then export config. |
 | A new Pantheon site has `main` and `master` | Dev runs `master`. Use `master` as GitHub's default branch. |
 
 </details>
