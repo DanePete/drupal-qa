@@ -42,6 +42,11 @@ class FeatureContext extends RawDrupalContext {
   public function loginAsNewUserWithRole(string $role): void {
     if (strtolower($role) === 'administrator') {
       $role = $this->administratorRole();
+      if ($role === '') {
+        // No admin role at all: the site's administrators are user 1.
+        $this->loginWithOneTimeLink(['uid' => 1]);
+        return;
+      }
     }
     $drush = $this->getDriver('drush');
     $name = 'drupal_qa_' . bin2hex(random_bytes(4));
@@ -54,10 +59,20 @@ class FeatureContext extends RawDrupalContext {
       $drush->drush('user:role:add', [escapeshellarg($role), escapeshellarg($name)]);
     }
 
-    $link = trim($drush->drush('user:login', [], ['name' => escapeshellarg($name), 'no-browser' => NULL]));
+    $this->loginWithOneTimeLink(['name' => escapeshellarg($name)]);
+  }
+
+  /**
+   * Logs in through a one-time login link from drush user:login.
+   *
+   * @param array<string, int|string> $who
+   *   The user:login option naming the account: name or uid.
+   */
+  protected function loginWithOneTimeLink(array $who): void {
+    $link = trim($this->getDriver('drush')->drush('user:login', [], $who + ['no-browser' => NULL]));
     $path = parse_url((string) strtok($link, "\n"), PHP_URL_PATH);
     if (!is_string($path) || !str_contains($path, '/user/reset/')) {
-      throw new \RuntimeException(sprintf('drush user:login returned no login link for %s: %s', $name, $link));
+      throw new \RuntimeException(sprintf('drush user:login returned no login link for %s: %s', (string) reset($who), $link));
     }
     $this->visitPath($path);
   }
@@ -455,10 +470,11 @@ class FeatureContext extends RawDrupalContext {
    * The site's administrator role: "administrator", or the role marked admin.
    *
    * Sites built from other profiles name it differently ("admin",
-   * "site_administrator"); what makes it the admin role is its flag.
+   * "site_administrator"); what makes it the admin role is its flag. Empty
+   * when the site has none, and only user 1 administers it.
    */
   protected function administratorRole(): string {
-    $id = (string) $this->drupalJson(<<<'PHP'
+    return (string) $this->drupalJson(<<<'PHP'
       $roles = \Drupal::entityTypeManager()->getStorage('user_role')->loadMultiple();
       if (isset($roles['administrator'])) {
         return 'administrator';
@@ -470,10 +486,6 @@ class FeatureContext extends RawDrupalContext {
       }
       return '';
       PHP);
-    if ($id === '') {
-      throw new \RuntimeException('This site has no administrator role (a role marked "Is admin"), so the administrator scenarios cannot log in.');
-    }
-    return $id;
   }
 
   /**
