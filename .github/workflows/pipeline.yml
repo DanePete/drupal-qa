@@ -135,8 +135,8 @@ jobs:
           fi
           if [ "$deploy" = true ] || [ "$cleanup" = true ]; then
             [ -n "$SITE" ] || fail "Set pantheon_site, or code_host: none to run checks only."
-            [ "$HAS_TOKEN" = true ] || fail "Secret PANTHEON_MACHINE_TOKEN is missing. Add it under Settings > Secrets and variables > Actions (repository or organization) and pass it with secrets: inherit."
-            [ "$HAS_KEY" = true ] || fail "Secret PANTHEON_SSH_KEY is missing. Add it under Settings > Secrets and variables > Actions (repository or organization) and pass it with secrets: inherit."
+            [ "$HAS_TOKEN" = true ] || fail "Secret PANTHEON_MACHINE_TOKEN is missing. Add it under Settings > Secrets and variables > Actions (repository or organization) and pass it to the workflow under secrets:, as in the README."
+            [ "$HAS_KEY" = true ] || fail "Secret PANTHEON_SSH_KEY is missing. Add it under Settings > Secrets and variables > Actions (repository or organization) and pass it to the workflow under secrets:, as in the README."
           fi
 
           # The project's own layout, so nobody has to describe it to us.
