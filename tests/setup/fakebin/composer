@@ -6,7 +6,11 @@ case "$1" in
   config) php -r '$f="composer.json"; $j=json_decode(file_get_contents($f),true); $j["config"]["platform"]["php"]=$argv[1]; file_put_contents($f, json_encode($j, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");' "$3" ;;
   require)
     [ -n "${FAKE_COMPOSER_FAIL_ONCE:-}" ] && [ ! -f "$FAKE_STATE/composer-failed" ] && { touch "$FAKE_STATE/composer-failed"; echo "Your requirements could not be resolved" >&2; exit 2; }
-    php -r '$f="composer.json"; $j=json_decode(file_get_contents($f),true); unset($j["require-dev"]["thronedigital/drupal-qa"]); $j["require-dev"]["thronedigital/drupal-qa"]="^2.1"; file_put_contents($f, json_encode($j, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");
-      $l=json_decode(file_get_contents("composer.lock"),true); $l["packages-dev"]=array_values(array_filter($l["packages-dev"] ?? [], fn($p) => $p["name"] !== "thronedigital/drupal-qa")); $l["packages-dev"][]=["name"=>"thronedigital/drupal-qa","version"=>"v2.1.0"]; file_put_contents("composer.lock", json_encode($l, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");' ;;
+    shift
+    for arg in "$@"; do
+      case "$arg" in -*) continue ;; esac
+      php -r '[$name, $c] = explode(":", $argv[1], 2); $f = "composer.json"; $j = json_decode(file_get_contents($f), true); $j["require-dev"][$name] = $c; file_put_contents($f, json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        $l = json_decode(file_get_contents("composer.lock"), true); $l["packages-dev"] = array_values(array_filter($l["packages-dev"] ?? [], fn($p) => $p["name"] !== $name)); $l["packages-dev"][] = ["name" => $name, "version" => $name === "thronedigital/drupal-qa" ? "v2.1.0" : "11.4.8"]; file_put_contents("composer.lock", json_encode($l, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");' "$arg"
+    done ;;
   *) echo "fake composer: unhandled $*" >&2; exit 3 ;;
 esac

@@ -692,27 +692,34 @@ stage_package() {
     fi
   fi
 
-  case "$INSTALLED" in
-    v2)
-      ok "drupal-qa v2 is already installed"
-      ;;
-    v1)
-      say "Upgrading drupal-qa from v1. Composer may take a few minutes."
-      act "composer require --dev $PACKAGE:$CONSTRAINT" "${COMPOSER[@]}" require --dev "$PACKAGE:$CONSTRAINT" -W --no-interaction \
-        || { bad "Composer couldn't install it. The output above says why."; exit 1; }
-      DONE_NOTES+=("Upgraded drupal-qa to v2")
-      ;;
-    *)
-      say "Composer may take a few minutes."
-      if ! act "composer require --dev $PACKAGE:$CONSTRAINT" "${COMPOSER[@]}" require --dev "$PACKAGE:$CONSTRAINT" --no-interaction; then
-        gap
-        confirm "Try again, letting Composer update the packages drupal-qa depends on?" y || exit 1
-        act "composer require --dev $PACKAGE:$CONSTRAINT -W" "${COMPOSER[@]}" require --dev "$PACKAGE:$CONSTRAINT" -W --no-interaction \
-          || { bad "Composer couldn't install it. The output above says why."; exit 1; }
-      fi
-      DONE_NOTES+=("Installed $PACKAGE")
-      ;;
-  esac
+  # Drupal's test classes need drupal/core-dev, matched to the site's core:
+  # without it Composer can pick test tools that core can't run.
+  local core wants=()
+  core=$(lock_version drupal/core)
+  [ "$INSTALLED" = v2 ] || wants+=("$PACKAGE:$CONSTRAINT")
+  if [ -z "$(lock_version drupal/core-dev)" ] && [ -n "$core" ]; then
+    wants+=("drupal/core-dev:^$core")
+    muted "Drupal's own test tools (drupal/core-dev $core) come along too: PHPUnit needs them."
+  fi
+  if [ ${#wants[@]} = 0 ]; then
+    ok "drupal-qa v2 and drupal/core-dev are already installed"
+  else
+    [ "$INSTALLED" = v1 ] && say "Upgrading drupal-qa from v1."
+    say "Composer may take a few minutes."
+    local w=()
+    [ "$INSTALLED" = v1 ] && w=(-W)
+    if ! act "composer require --dev ${wants[*]}" "${COMPOSER[@]}" require --dev "${wants[@]}" "${w[@]}" --no-interaction; then
+      gap
+      confirm "Try again, letting Composer update the packages these depend on?" y || exit 1
+      act "composer require --dev ${wants[*]} -W" "${COMPOSER[@]}" require --dev "${wants[@]}" -W --no-interaction \
+        || { bad "Composer couldn't install them. The output above says why."; exit 1; }
+    fi
+    case "$INSTALLED" in
+      v2) DONE_NOTES+=("Installed drupal/core-dev") ;;
+      v1) DONE_NOTES+=("Upgraded drupal-qa to v2") ;;
+      *) DONE_NOTES+=("Installed $PACKAGE") ;;
+    esac
+  fi
 
   local old=() f
   for f in $V1_WORKFLOWS; do
