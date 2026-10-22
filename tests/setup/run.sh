@@ -105,6 +105,9 @@ drive() {
   " > "$T/expect.out" 2>&1
 }
 
+# has_bytes PRINTF-FORMAT FILE: the file contains these exact bytes.
+has_bytes() { LC_ALL=C grep -a -q "$(printf "$1")" "$2"; }
+
 c() { # c "description" test-command...
   local d=$1
   shift
@@ -188,6 +191,7 @@ if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; w
   c "opened the pull request" grep -q 'gh pr create -R acme-org/acme-site --base master --head chore/drupal-qa' "$FAKE_LOG"
   c "never printed the token" sh -c "! grep -q 'good-token' '$T/transcript'"
   c "never force-pushed" sh -c "! grep -q -- '--force' '$FAKE_LOG'"
+  c "drew the job board's icons intact" has_bytes '\342\234\223\033\\[0m Plan' "$T/transcript"
   done_scenario
 fi
 

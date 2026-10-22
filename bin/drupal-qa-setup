@@ -1129,11 +1129,11 @@ watch_run() {
       [ "$name" = RUN ] && continue
       name=${name#qa / }
       case "$st/$co" in
-        completed/success) icon="$GREEN✓$R" ;;
-        completed/skipped) icon="$GRAY–$R" ;;
-        completed/*) icon="$RED✗$R" ;;
+        completed/success) icon="${GREEN}✓${R}" ;;
+        completed/skipped) icon="${GRAY}–${R}" ;;
+        completed/*) icon="${RED}✗${R}" ;;
         in_progress/*) icon="$CYAN${FRAMES[tick % 10]}$R" ;;
-        *) icon="$GRAY○$R" ;;
+        *) icon="${GRAY}○${R}" ;;
       esac
       printf '\033[K    %s %s\n' "$icon" "$name"
       lines=$((lines + 1))
