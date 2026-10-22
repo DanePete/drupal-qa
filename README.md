@@ -20,6 +20,8 @@ Or starting from nothing, in a new folder; the wizard offers to pull the site do
 mkdir -p ~/drupal-qa-setup && cd ~/drupal-qa-setup && bash <(curl -fsSL https://raw.githubusercontent.com/DanePete/drupal-qa/main/bin/drupal-qa-setup)
 ```
 
+Rather do it by hand? Every step is in [Manual installation](#manual-installation).
+
 The setup wizard installs the package, writes the workflow, connects GitHub, sets both
 secrets, adds the SSH key to Pantheon, opens the first pull request and watches it run.
 
@@ -29,7 +31,8 @@ secrets, adds the SSH key to Pantheon, opens the first pull request and watches 
 
 **In this README:** [the wizard, stage by stage](#the-wizard-stage-by-stage),
 [what it runs](#what-it-runs), [what blocks a merge](#what-blocks-a-merge),
-[adding your own tests](#adding-your-own-tests), and the [reference](#reference).
+[adding your own tests](#adding-your-own-tests), the [reference](#reference), and
+[manual installation](#manual-installation).
 
 ## The wizard, stage by stage
 
@@ -255,108 +258,6 @@ paths, config directory, Commerce, and which module-specific tests apply.
 </details>
 
 <details>
-<summary><b>Setting it up by hand</b>: the package, the workflow, the secrets</summary>
-
-**1. Add the package.**
-
-```bash
-composer require --dev thronedigital/drupal-qa "drupal/core-dev:~11.4.8"   # your core version
-```
-
-`drupal/core-dev` brings the PHPUnit tooling Drupal's own test classes need, matched
-to your core. Drupal 10 and 11 both work.
-
-**2. Add the workflow.** Save as `.github/workflows/drupal-qa.yml`:
-
-```yaml
-name: Drupal QA
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-  push:
-    branches: [main]          # your default branch; a clone of Pantheon's repo uses master
-
-jobs:
-  qa:
-    permissions:              # new repositories let workflows only read;
-      contents: read          # the results comment needs this write
-      pull-requests: write
-    uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
-    with:
-      pantheon_site: my-site  # terminus site:list
-    secrets:
-      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
-      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
-```
-
-**3. Add two secrets.** Both act as your Pantheon account, so add them only to
-repositories you trust.
-
-The token: open [your Pantheon user settings](https://dashboard.pantheon.io/personal-settings),
-choose **Personal Access Tokens**, then **Add token**. Copy it; you see it once. It expires after 90 days.
-
-![Pantheon's Personal Access Tokens tab with Add token highlighted](docs/images/setup-pantheon-token.png)
-
-The SSH key: make an RSA key (Terminus refuses ed25519), then give Pantheon the
-public half: **User settings**, **SSH Keys**, **Add New Key**, paste `~/.ssh/drupal_qa.pub`.
-
-```bash
-ssh-keygen -t rsa -b 4096 -m PEM -N "" -C "drupal-qa" -f ~/.ssh/drupal_qa
-```
-
-![Pantheon's SSH Keys tab with Add New Key highlighted](docs/images/setup-pantheon-ssh-key.png)
-
-Into GitHub: the repository's **Settings**, **Secrets and variables**, **Actions**,
-**New repository secret**. Add `PANTHEON_MACHINE_TOKEN` (the token) and
-`PANTHEON_SSH_KEY` (the whole private key file, `~/.ssh/drupal_qa`), or:
-
-```bash
-gh secret set PANTHEON_MACHINE_TOKEN
-gh secret set PANTHEON_SSH_KEY < ~/.ssh/drupal_qa
-```
-
-![GitHub's Actions secrets page with the path to New repository secret highlighted](docs/images/setup-github-secrets.png)
-
-![GitHub's New secret form with PANTHEON_MACHINE_TOKEN filled in](docs/images/setup-github-new-secret.png)
-
-**4. Open a pull request.** Pantheon builds the multidev on the first run:
-
-![Pantheon's Multidev page with the pr-3 environment drupal-qa created](docs/images/run-pantheon-multidev.png)
-
-</details>
-
-<details>
-<summary><b>Site only in Pantheon's git?</b></summary>
-
-The wizard handles this: run it in an empty folder and pick the site. By hand, pull it
-down, add drupal-qa, and push it to a new GitHub repository:
-
-```bash
-terminus local:clone my-site && cd ~/pantheon-local-copies/my-site
-composer install
-composer require --dev thronedigital/drupal-qa "drupal/core-dev:~11.4.8"   # your core version
-curl -fsSL --create-dirs -o .github/workflows/drupal-qa.yml \
-  https://raw.githubusercontent.com/DanePete/drupal-qa/main/examples/drupal-qa.yml
-# edit it: pantheon_site: my-site, branches: [master]
-
-gh repo create my-org/my-site --private --source . --remote github --push
-gh secret set PANTHEON_MACHINE_TOKEN
-gh secret set PANTHEON_SSH_KEY < ~/.ssh/drupal_qa
-
-git checkout -b chore/drupal-qa
-git add composer.json composer.lock .github
-git commit -m "chore: add drupal-qa"
-git push -u github chore/drupal-qa && gh pr create --fill
-```
-
-From then on, changes start on GitHub and drupal-qa pushes merges to Pantheon's
-`master`. Leave SFTP mode off, and merge any dashboard or Autopilot commit into
-GitHub before the next deploy.
-
-</details>
-
-<details>
 <summary><b>Troubleshooting</b></summary>
 
 | Message | Fix |
@@ -406,7 +307,7 @@ The wizard upgrades v1 for you. By hand:
 
 1. `composer require --dev thronedigital/drupal-qa:^2`
 2. Delete `pr-checks.yml`, `multidev.yml`, `multidev-cleanup.yml` and
-   `deploy-pantheon.yml`, and add the workflow from "Setting it up by hand" above.
+   `deploy-pantheon.yml`, and add the workflow from [Manual installation](#manual-installation), step 3.
    `phpcs_required: true` becomes `required: phpcs`; `run_behat: false` becomes
    `skip: behat`.
 3. A v1 `behat.yml` probably needs its `base_url` removed.
@@ -431,5 +332,119 @@ git push origin v2.0.3 && git push -f origin v2
 ```
 
 </details>
+
+## Manual installation
+
+Everything the wizard does, by hand. You need git, Composer (or ddev), and
+[Terminus](https://docs.pantheon.io/terminal) and the [GitHub CLI](https://cli.github.com/),
+both logged in.
+
+**1. Get the site's code.** Already in the site's folder? Go to step 2. If the site lives only
+in Pantheon's git, pull it down:
+
+```bash
+terminus local:clone my-site && cd ~/pantheon-local-copies/my-site
+composer install
+```
+
+**2. Add the package**, with Drupal's own test tools matched to your core version:
+
+```bash
+composer require --dev thronedigital/drupal-qa "drupal/core-dev:~11.4.8"   # your core version
+```
+
+- drupal-qa needs PHP 8.2 or newer. If `composer.json` pins `config.platform.php` lower,
+  raise it to the version Pantheon runs (`php_version` in `pantheon.yml`) first:
+  `composer config platform.php 8.2`.
+- If Composer refuses, run it again with `-W` so it can update the packages these depend
+  on, and check what changed in `composer.lock` before you commit.
+
+**3. Add the workflow.** Save this as `.github/workflows/drupal-qa.yml`, with your site's
+machine name (`terminus site:list`) and your default branch (a clone of Pantheon's
+repository uses `master`):
+
+```yaml
+name: Drupal QA
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main]          # your default branch
+
+jobs:
+  qa:
+    permissions:              # new repositories let workflows only read;
+      contents: read          # the results comment needs this write
+      pull-requests: write
+    uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
+    with:
+      pantheon_site: my-site
+    secrets:
+      PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
+      PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
+```
+
+**4. Put the code on GitHub.** Skip this if the site already has a GitHub repository.
+
+```bash
+gh repo create my-org/my-site --private --source . --remote github --push
+```
+
+**5. Add the two secrets.** Both act as your Pantheon account, so add them only to
+repositories you trust.
+
+The token: open [your Pantheon user settings](https://dashboard.pantheon.io/personal-settings),
+choose **Personal Access Tokens**, then **Add token**. Copy it; Pantheon shows it once, and it
+expires after 90 days.
+
+![Pantheon's Personal Access Tokens tab with Add token highlighted](docs/images/setup-pantheon-token.png)
+
+The SSH key: make an RSA key just for drupal-qa (Terminus refuses ed25519) and give Pantheon
+its public half:
+
+```bash
+ssh-keygen -t rsa -b 4096 -m PEM -N "" -C "drupal-qa" -f ~/.ssh/drupal_qa
+terminus ssh-key:add ~/.ssh/drupal_qa.pub
+```
+
+Or add it in the dashboard: **User settings**, **SSH Keys**, **Add New Key**, paste
+`~/.ssh/drupal_qa.pub`.
+
+![Pantheon's SSH Keys tab with Add New Key highlighted](docs/images/setup-pantheon-ssh-key.png)
+
+Then save both in the GitHub repository. `gh secret set` asks for the token without showing it:
+
+```bash
+gh secret set PANTHEON_MACHINE_TOKEN
+gh secret set PANTHEON_SSH_KEY < ~/.ssh/drupal_qa
+```
+
+Or on GitHub: the repository's **Settings**, **Secrets and variables**, **Actions**, **New
+repository secret**. The names must match exactly: `PANTHEON_MACHINE_TOKEN` holds the token,
+`PANTHEON_SSH_KEY` the whole private key file.
+
+![GitHub's Actions secrets page with the path to New repository secret highlighted](docs/images/setup-github-secrets.png)
+
+![GitHub's New secret form with PANTHEON_MACHINE_TOKEN filled in](docs/images/setup-github-new-secret.png)
+
+**6. Open a pull request.** Use the name of your GitHub remote: `github` if you made the
+repository in step 4, usually `origin` otherwise.
+
+```bash
+git checkout -b chore/drupal-qa
+git add composer.json composer.lock .github
+git commit -m "chore: add drupal-qa"
+git push -u github chore/drupal-qa && gh pr create --fill
+```
+
+**7. Watch the first run** under the repository's **Actions**. It takes 10 to 15 minutes, most
+of it Pantheon building the pull request's multidev, then the results land on the pull request
+as a comment with a link to the multidev.
+
+![Pantheon's Multidev page with the pr-3 environment drupal-qa created](docs/images/run-pantheon-multidev.png)
+
+From then on, changes start on GitHub and drupal-qa pushes merges to Pantheon. Leave SFTP mode
+off, and merge any dashboard or Autopilot commit into GitHub before the next deploy.
 
 MIT licensed.

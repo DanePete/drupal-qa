@@ -9,6 +9,9 @@ on:
 
 jobs:
   qa:
+    permissions:              # new repositories let workflows only read;
+      contents: read          # the results comment needs this write
+      pull-requests: write
     uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
     with:
       pantheon_site: my-site
