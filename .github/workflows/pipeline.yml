@@ -22,7 +22,9 @@ on:
         type: string
         default: ''
       code_host:
-        description: "Who moves code to Pantheon: pantheon (this workflow pushes), github-app (Pantheon's GitHub App does), none (checks only)."
+        description: >-
+          Who moves code to Pantheon: pantheon (this workflow pushes),
+          github-app (Pantheon's GitHub App does), none (checks only).
         type: string
         default: pantheon
       multidev:
@@ -101,7 +103,7 @@ jobs:
           HAS_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN != '' }}
           HAS_KEY: ${{ secrets.PANTHEON_SSH_KEY != '' }}
         run: |
-          fail() { echo "::error title=drupal-qa::$1"; exit 1; }
+          fail() { echo "::error title=drupal-qa::$*"; exit 1; }
           out() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
           words() { echo "$1" | tr ',[:upper:]' ' [:lower:]' | tr -s ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' '; }
 
@@ -109,7 +111,9 @@ jobs:
           STEPS="$CHECKS updatedb cim"
           REQUIRED=" $(words "$REQUIRED")"
           SKIP=" $(words "$SKIP")"
-          for n in $REQUIRED; do [[ " $CHECKS " == *" $n "* ]] || fail "required: unknown check '$n'. Use any of: $CHECKS"; done
+          for n in $REQUIRED; do
+            [[ " $CHECKS " == *" $n "* ]] || fail "required: unknown check '$n'. Use any of: $CHECKS"
+          done
           for n in $SKIP; do [[ " $STEPS " == *" $n "* ]] || fail "skip: unknown step '$n'. Use any of: $STEPS"; done
 
           case "$CODE_HOST" in
@@ -123,7 +127,11 @@ jobs:
               if [ "$EVENT_ACTION" = closed ]; then event="pr-closed"; else event="pr"; fi
               ;;
             push|workflow_dispatch)
-              if [ "$REF" = "refs/heads/$DEFAULT_BRANCH" ]; then event=main; env_name=dev; else event=branch; env_name=; fi
+              if [ "$REF" = "refs/heads/$DEFAULT_BRANCH" ]; then
+                event=main; env_name=dev
+              else
+                event=branch; env_name=
+              fi
               ;;
             *) fail "drupal-qa runs on pull_request and push, not $EVENT_NAME." ;;
           esac
@@ -137,12 +145,17 @@ jobs:
           fi
           if [ "$deploy" = true ] || [ "$cleanup" = true ]; then
             [ -n "$SITE" ] || fail "Set pantheon_site, or code_host: none to run checks only."
-            [ "$HAS_TOKEN" = true ] || fail "Secret PANTHEON_MACHINE_TOKEN is missing. Add it under Settings > Secrets and variables > Actions (repository or organization) and pass it to the workflow under secrets:, as in the README."
-            [ "$HAS_KEY" = true ] || fail "Secret PANTHEON_SSH_KEY is missing. Add it under Settings > Secrets and variables > Actions (repository or organization) and pass it to the workflow under secrets:, as in the README."
+            missing() {
+              fail "Secret $1 is missing. Add it under Settings > Secrets and variables > Actions" \
+                "(repository or organization) and pass it to the workflow under secrets:, as in the README."
+            }
+            [ "$HAS_TOKEN" = true ] || missing PANTHEON_MACHINE_TOKEN
+            [ "$HAS_KEY" = true ] || missing PANTHEON_SSH_KEY
           fi
 
           # The project's own layout, so nobody has to describe it to us.
-          webroot=$(jq -r '.extra["drupal-scaffold"].locations["web-root"] // "web"' composer.json 2>/dev/null | sed -E 's#^\./##; s#/+$##')
+          webroot=$(jq -r '.extra["drupal-scaffold"].locations["web-root"] // "web"' composer.json 2>/dev/null \
+            | sed -E 's#^\./##; s#/+$##')
           [ -n "$webroot" ] || webroot=.
           php=$(jq -r '.config.platform.php // empty' composer.json 2>/dev/null | cut -d. -f1,2)
           if [ -z "$php" ] && [ -f pantheon.yml ]; then
@@ -188,9 +201,17 @@ jobs:
           m[watchdog]=$(mode watchdog warn)
 
           note=()
-          if [ -z "$code_paths" ]; then m[phpcs]=off; m[phpstan]=off; note+=("No custom modules or themes found: PHPCS and PHPStan have nothing to check."); fi
-          if [ -z "$config_dir" ]; then m[yamllint]=off; note+=("No config sync directory found: YAML lint skipped."); fi
-          if [ "$deploy" != true ]; then m[behat]=off; m[config]=off; m[updatedb]=off; m[cim]=off; m[status]=off; m[watchdog]=off; fi
+          if [ -z "$code_paths" ]; then
+            m[phpcs]=off; m[phpstan]=off
+            note+=("No custom modules or themes found: PHPCS and PHPStan have nothing to check.")
+          fi
+          if [ -z "$config_dir" ]; then
+            m[yamllint]=off
+            note+=("No config sync directory found: YAML lint skipped.")
+          fi
+          if [ "$deploy" != true ]; then
+            m[behat]=off; m[config]=off; m[updatedb]=off; m[cim]=off; m[status]=off; m[watchdog]=off
+          fi
           if [ "${m[behat]}" = off ]; then m[watchdog]=off; fi
           if [ "$event" = pr-closed ]; then for k in "${!m[@]}"; do m[$k]=off; done; fi
 
@@ -207,7 +228,9 @@ jobs:
           {
             echo "event=$event env=${env_name:-none} code_host=$CODE_HOST php=$php commerce=$commerce"
             echo "code paths: ${code_paths:-none}  config: ${config_dir:-none}"
-            for k in phpcs phpstan yamllint audit secrets phpunit updatedb cim config status behat watchdog; do printf '  %-9s %s\n' "$k" "${m[$k]}"; done
+            for k in phpcs phpstan yamllint audit secrets phpunit updatedb cim config status behat watchdog; do
+              printf '  %-9s %s\n' "$k" "${m[$k]}"
+            done
             for n in "${note[@]}"; do echo "note: $n"; done
           }
 
@@ -246,11 +269,14 @@ jobs:
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Composer install
-        if: needs.plan.outputs.phpcs != 'off' || needs.plan.outputs.phpstan != 'off' || needs.plan.outputs.audit != 'off'
+        if: >-
+          needs.plan.outputs.phpcs != 'off' || needs.plan.outputs.phpstan != 'off'
+          || needs.plan.outputs.audit != 'off'
         run: |
           composer install --no-interaction --no-progress --prefer-dist
           if [ ! -x vendor/bin/phpcs ] || [ ! -x vendor/bin/phpstan ]; then
-            echo "::error title=drupal-qa::The QA tools are not installed. Run: composer require --dev thronedigital/drupal-qa"
+            echo "::error title=drupal-qa::The QA tools are not installed." \
+              "Run: composer require --dev thronedigital/drupal-qa"
             exit 1
           fi
 
@@ -280,7 +306,8 @@ jobs:
           else
             # shellcheck disable=SC2086
             vendor/bin/phpstan analyse --memory-limit=-1 --no-progress --error-format=github \
-              --configuration="$(composer config vendor-dir)/thronedigital/drupal-qa/config/phpstan.neon.dist" $CODE_PATHS
+              --configuration="$(composer config vendor-dir)/thronedigital/drupal-qa/config/phpstan.neon.dist" \
+              $CODE_PATHS
           fi
 
       - name: YAML lint
@@ -315,7 +342,8 @@ jobs:
           # gitleaks Action needs a paid license on organization repos and
           # errors out without one. Scans only the commits this change adds.
           mkdir -p "$RUNNER_TEMP/bin"
-          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+          release="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -fsSL "$release/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | tar xz -C "$RUNNER_TEMP/bin" gitleaks
           if [ -n "$BASE_SHA" ]; then
             range="$BASE_SHA..$HEAD_SHA"
@@ -331,7 +359,10 @@ jobs:
         id: results
         if: always()
         run: |
-          echo "results=phpcs=${{ steps.phpcs.outcome }} phpstan=${{ steps.phpstan.outcome }} yamllint=${{ steps.yamllint.outcome }} audit=${{ steps.audit.outcome }} secrets=${{ steps.secrets.outcome }}" >> "$GITHUB_OUTPUT"
+          results="phpcs=${{ steps.phpcs.outcome }} phpstan=${{ steps.phpstan.outcome }}"
+          results+=" yamllint=${{ steps.yamllint.outcome }} audit=${{ steps.audit.outcome }}"
+          results+=" secrets=${{ steps.secrets.outcome }}"
+          echo "results=$results" >> "$GITHUB_OUTPUT"
 
   tests:
     name: PHPUnit
@@ -381,7 +412,8 @@ jobs:
         run: |
           composer install --no-interaction --no-progress --prefer-dist
           if [ ! -x vendor/bin/phpunit ]; then
-            echo "::error title=drupal-qa::PHPUnit is not installed. Run: composer require --dev thronedigital/drupal-qa"
+            echo "::error title=drupal-qa::PHPUnit is not installed." \
+              "Run: composer require --dev thronedigital/drupal-qa"
             exit 1
           fi
 
@@ -398,7 +430,8 @@ jobs:
           # PHPUnit Symfony's bridge can't run, and a PHP fatal instead of a test.
           if ! grep -q '"name": "drupal/core-dev"' composer.lock; then
             core=$(jq -r '[.packages[] | select(.name == "drupal/core")][0].version // empty' composer.lock)
-            echo "::error title=PHPUnit::drupal/core-dev is missing. Drupal's test classes need it. Run: composer require --dev drupal/core-dev:~${core:-<your core version>}"
+            echo "::error title=PHPUnit::drupal/core-dev is missing. Drupal's test classes need it." \
+              "Run: composer require --dev drupal/core-dev:~${core:-<your core version>}"
             exit 1
           fi
           # A project's own phpunit.xml(.dist) wins; otherwise the package's.
@@ -453,7 +486,8 @@ jobs:
       - name: Install Terminus
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
-          curl -fsSL "https://github.com/pantheon-systems/terminus/releases/download/${TERMINUS_VERSION}/terminus.phar" -o "$RUNNER_TEMP/bin/terminus"
+          releases=https://github.com/pantheon-systems/terminus/releases/download
+          curl -fsSL "$releases/${TERMINUS_VERSION}/terminus.phar" -o "$RUNNER_TEMP/bin/terminus"
           chmod +x "$RUNNER_TEMP/bin/terminus"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
@@ -497,13 +531,17 @@ jobs:
           fi
           if [ -z "$prev" ] || ! git cat-file -e "$prev^{commit}" 2>/dev/null; then
             prev=""
-            if [ -n "$BEFORE" ] && ! [[ "$BEFORE" =~ ^0+$ ]] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then prev=$BEFORE; fi
+            if [ -n "$BEFORE" ] && ! [[ "$BEFORE" =~ ^0+$ ]] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              prev=$BEFORE
+            fi
             if [ -n "$BASE_SHA" ] && [ -z "$prev" ]; then prev=$BASE_SHA; fi
           fi
           marker=""
           if [ -n "$prev" ]; then
-            files=$(git diff --name-only --no-renames --diff-filter=AM "$prev" HEAD -- . ':(exclude).github' ':(exclude)tests' ':(exclude)*.md' || true)
-            marker=$(echo "$files" | grep -v '^config/' | grep -E '\.(php|module|inc|install|theme|yml|twig|json|lock|js|css)$' | tail -1 || true)
+            files=$(git diff --name-only --no-renames --diff-filter=AM "$prev" HEAD -- . \
+              ':(exclude).github' ':(exclude)tests' ':(exclude)*.md' || true)
+            marker=$(echo "$files" | grep -v '^config/' \
+              | grep -E '\.(php|module|inc|install|theme|yml|twig|json|lock|js|css)$' | tail -1 || true)
             if [ -z "$marker" ]; then marker=$(echo "$files" | sed '/^$/d' | tail -1); fi
           fi
           if [ -n "$marker" ]; then
@@ -541,7 +579,9 @@ jobs:
           if [ "$ENV_NAME" = dev ]; then
             git fetch --quiet pantheon master
             if ! git merge-base --is-ancestor FETCH_HEAD HEAD; then
-              echo "::error title=drupal-qa::Pantheon's master has commits this branch does not, such as a dashboard commit or an Autopilot update. Merge them into GitHub first: git fetch $REMOTE master && git merge FETCH_HEAD"
+              echo "::error title=drupal-qa::Pantheon's master has commits this branch does not," \
+                "such as a dashboard commit or an Autopilot update." \
+                "Merge them into GitHub first: git fetch $REMOTE master && git merge FETCH_HEAD"
               exit 1
             fi
             push pantheon HEAD:refs/heads/master
@@ -552,7 +592,9 @@ jobs:
               case "$(terminus env:info "$SITE.live" --field=initialized 2> /dev/null)" in 1|true) ;; *) src=dev ;; esac
               echo "Creating multidev $ENV_NAME from $src."
               terminus multidev:create "$SITE.$src" "$ENV_NAME" || {
-                echo "::error title=drupal-qa::Could not create multidev $ENV_NAME. If the site is at its multidev limit, delete an unused one; if the site has no multidev, set multidev: false."
+                echo "::error title=drupal-qa::Could not create multidev $ENV_NAME." \
+                  "If the site is at its multidev limit, delete an unused one;" \
+                  "if the site has no multidev, set multidev: false."
                 exit 1
               }
             fi
@@ -568,7 +610,8 @@ jobs:
             if terminus env:info "$SITE.$ENV_NAME" --field=id > /dev/null 2>&1; then exit 0; fi
             sleep 15
           done
-          echo "::error title=drupal-qa::Pantheon did not create $ENV_NAME within 15 minutes. Check the GitHub App's status on the pull request."
+          echo "::error title=drupal-qa::Pantheon did not create $ENV_NAME within 15 minutes." \
+            "Check the GitHub App's status on the pull request."
           exit 1
 
       - name: Wait until the environment serves this commit
@@ -580,19 +623,25 @@ jobs:
         run: |
           # Advisory: Pantheon intermittently reports a successful sync as
           # failed. The file check below is the gate.
-          terminus workflow:wait "$SITE.$ENV_NAME" --max=600 || echo "::notice::workflow:wait reported a failure; checking the environment directly."
+          terminus workflow:wait "$SITE.$ENV_NAME" --max=600 \
+            || echo "::notice::workflow:wait reported a failure; checking the environment directly."
           terminus env:wake "$SITE.$ENV_NAME" > /dev/null 2>&1 || true
           deadline=$((SECONDS + 900))
           if [ -n "$MARKER" ]; then
             # Single quotes only: the code crosses terminus and SSH as one argument.
-            php_code="\$p=base64_decode('$MARKER_B64'); \$r=is_file(DRUPAL_ROOT.'/../composer.json') ? DRUPAL_ROOT.'/..' : DRUPAL_ROOT; echo is_file(\$r.'/'.\$p) ? md5_file(\$r.'/'.\$p) : 'missing';"
+            printf -v php_code '%s' \
+              "\$p=base64_decode('$MARKER_B64');" \
+              " \$r=is_file(DRUPAL_ROOT.'/../composer.json') ? DRUPAL_ROOT.'/..' : DRUPAL_ROOT;" \
+              " echo is_file(\$r.'/'.\$p) ? md5_file(\$r.'/'.\$p) : 'missing';"
             while true; do
               got=$(terminus drush "$SITE.$ENV_NAME" -- php:eval "$php_code" 2> /dev/null | tail -1 || true)
               if [ "$got" = "$MD5" ]; then echo "$ENV_NAME is serving $MARKER from this commit."; exit 0; fi
               if [ $SECONDS -ge $deadline ]; then break; fi
               sleep 15
             done
-            echo "::error title=drupal-qa::$ENV_NAME still serves the old $MARKER after 15 minutes. Check: terminus workflow:list $SITE. If the code log shows this commit but the old code runs, push an empty commit to force a new sync."
+            echo "::error title=drupal-qa::$ENV_NAME still serves the old $MARKER after 15 minutes." \
+              "Check: terminus workflow:list $SITE. If the code log shows this commit but the old code runs," \
+              "push an empty commit to force a new sync."
             exit 1
           fi
           until terminus drush "$SITE.$ENV_NAME" -- status --field=bootstrap 2> /dev/null | grep -qi successful; do
@@ -643,7 +692,8 @@ jobs:
             echo "::error title=Config status::Could not read config status from $ENV_NAME."
             exit 1
           }
-          rows=$(echo "$status" | grep -vE '^[[:space:]]*\[(notice|info|warning|success|debug)\]' | jq 'length' 2> /dev/null) || {
+          rows=$(echo "$status" | grep -vE '^[[:space:]]*\[(notice|info|warning|success|debug)\]' \
+            | jq 'length' 2> /dev/null) || {
             echo "::error title=Config status::Unexpected config status output from $ENV_NAME:"
             echo "$status"
             exit 1
@@ -682,8 +732,10 @@ jobs:
           if [ "$rows" = 0 ]; then
             echo "The status report on $ENV_NAME has no errors."
           else
-            echo "::error title=Status report::The status report on $ENV_NAME has $rows error(s). See /admin/reports/status there."
-            echo "$report" | jq -r 'to_entries[] | "- \(.value.title // .key): \(.value.value // "" | tostring | gsub("<[^>]*>"; ""))"'
+            echo "::error title=Status report::The status report on $ENV_NAME has $rows error(s)." \
+              "See /admin/reports/status there."
+            echo "$report" | jq -r 'to_entries[]
+              | "- \(.value.title // .key): \(.value.value // "" | tostring | gsub("<[^>]*>"; ""))"'
             exit 1
           fi
 
@@ -693,7 +745,11 @@ jobs:
         run: |
           deliver="${{ steps.deliver.outcome }}"
           if [ "$CODE_HOST" = github-app ]; then deliver="${{ steps.created.outcome }}"; fi
-          echo "results=deliver=$deliver converge=${{ steps.converge.outcome }} updatedb=${{ steps.updatedb.outcome }} cim=${{ steps.cim.outcome }} deployhooks=${{ steps.deployhooks.outcome }} config=${{ steps.config.outcome }} status=${{ steps.status.outcome }}" >> "$GITHUB_OUTPUT"
+          results="deliver=$deliver converge=${{ steps.converge.outcome }}"
+          results+=" updatedb=${{ steps.updatedb.outcome }} cim=${{ steps.cim.outcome }}"
+          results+=" deployhooks=${{ steps.deployhooks.outcome }} config=${{ steps.config.outcome }}"
+          results+=" status=${{ steps.status.outcome }}"
+          echo "results=$results" >> "$GITHUB_OUTPUT"
 
   behat:
     name: Behat
@@ -742,7 +798,8 @@ jobs:
       - name: Install Terminus
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
-          curl -fsSL "https://github.com/pantheon-systems/terminus/releases/download/${TERMINUS_VERSION}/terminus.phar" -o "$RUNNER_TEMP/bin/terminus"
+          releases=https://github.com/pantheon-systems/terminus/releases/download
+          curl -fsSL "$releases/${TERMINUS_VERSION}/terminus.phar" -o "$RUNNER_TEMP/bin/terminus"
           chmod +x "$RUNNER_TEMP/bin/terminus"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
@@ -769,8 +826,12 @@ jobs:
         run: |
           # PHP errors logged from here on came from the tests' own requests
           # (or from cron running at the same moment). No dblog, no check.
-          php_code='echo \Drupal::moduleHandler()->moduleExists("dblog") ? "DQA:" . (int) \Drupal::database()->query("SELECT MAX(wid) FROM {watchdog}")->fetchField() : "DQA:none";'
-          out=$(vendor/bin/drush "@pantheon.$SITE.$ENV_NAME" php:eval "$php_code" 2> /dev/null | grep -o 'DQA:[a-z0-9]*' | tail -1)
+          printf -v php_code '%s' \
+            'echo \Drupal::moduleHandler()->moduleExists("dblog")' \
+            ' ? "DQA:" . (int) \Drupal::database()->query("SELECT MAX(wid) FROM {watchdog}")->fetchField()' \
+            ' : "DQA:none";'
+          out=$(vendor/bin/drush "@pantheon.$SITE.$ENV_NAME" php:eval "$php_code" 2> /dev/null \
+            | grep -o 'DQA:[a-z0-9]*' | tail -1)
           wid=${out#DQA:}
           if [ "$wid" = none ] || [ -z "$wid" ]; then
             echo "dblog is not enabled on $ENV_NAME, so PHP errors can't be read; that check is skipped."
@@ -811,7 +872,9 @@ jobs:
           # A GET, like Behat's own requests: the challenge is score based,
           # and a lone HEAD request can slip through without a token.
           if curl -s -D - -o /dev/null "${header[@]}" "$URL/" | grep -qi '^cf-mitigated:'; then
-            echo "::error title=Behat::Pantheon's bot protection challenges requests from CI, so no test can reach the site. Check that terminus gcdn:bot-bypass $SITE returns a token for this machine token."
+            echo "::error title=Behat::Pantheon's bot protection challenges requests from CI," \
+              "so no test can reach the site." \
+              "Check that terminus gcdn:bot-bypass $SITE returns a token for this machine token."
             exit 1
           fi
 
@@ -824,8 +887,9 @@ jobs:
           {
             printf '%s\n' "imports:" "  - $base" "default:" "  extensions:" "    $mink:" "      base_url: '$URL'"
             if [ -n "$token" ] && [ "$mink" = 'Drupal\MinkExtension' ]; then
-              printf '%s\n' "      browserkit_http:" "        guzzle_request_options:" "          allow_redirects: false" \
-                "          cookies: true" "          headers:" "            x-pantheon-bot-bypass: '$token'"
+              printf '%s\n' "      browserkit_http:" "        guzzle_request_options:" \
+                "          allow_redirects: false" "          cookies: true" "          headers:" \
+                "            x-pantheon-bot-bypass: '$token'"
             fi
             printf '%s\n' "    Drupal\\DrupalExtension:" "      drush:" "        alias: '@pantheon.$SITE.$ENV_NAME'"
           } > behat.drupal-qa.yml
@@ -833,14 +897,20 @@ jobs:
           if [ "$COMMERCE" = true ]; then suite=(); fi
           # Features tagged with a module run only where that module is
           # enabled, so a site without webforms never fails a webform test.
-          modules=" $(vendor/bin/drush "@pantheon.$SITE.$ENV_NAME" pm:list --status=enabled --type=module --format=list 2> /dev/null | tr '\n' ' ') "
+          modules=" $(vendor/bin/drush "@pantheon.$SITE.$ENV_NAME" pm:list --status=enabled --type=module \
+            --format=list 2> /dev/null | tr '\n' ' ') "
           tags='~@wip'
           for pair in webform:webform search:search sitemap:simple_sitemap,xmlsitemap metatag:metatag; do
             tag=${pair%%:*}; mods=${pair#*:}; on=false
             for mod in ${mods//,/ }; do [[ "$modules" == *" $mod "* ]] && on=true; done
-            if [ "$on" = false ]; then tags="$tags&&~@$tag"; else echo "Running the @$tag tests: the module is enabled."; fi
+            if [ "$on" = false ]; then
+              tags="$tags&&~@$tag"
+            else
+              echo "Running the @$tag tests: the module is enabled."
+            fi
           done
-          vendor/bin/behat --config=behat.drupal-qa.yml "${suite[@]}" --tags="$tags" --format=progress --strict --no-interaction 2>&1 | tee "$RUNNER_TEMP/behat.txt"
+          vendor/bin/behat --config=behat.drupal-qa.yml "${suite[@]}" --tags="$tags" \
+            --format=progress --strict --no-interaction 2>&1 | tee "$RUNNER_TEMP/behat.txt"
           if ! grep -qE '^[1-9][0-9]* scenarios? \(' "$RUNNER_TEMP/behat.txt"; then
             echo "::error title=Behat::Behat ran no scenarios."
             exit 1
@@ -857,7 +927,15 @@ jobs:
           # PHP warnings and errors logged while Behat ran: notices that never
           # turn into a 500 still mean broken code. Cron can run meanwhile on
           # Pantheon, so the messages are printed for a person to judge.
-          php_code='$rows = \Drupal::database()->query("SELECT message, variables, severity FROM {watchdog} WHERE wid > :wid AND type = :type AND severity <= 4 ORDER BY wid LIMIT 20", [":wid" => '"$WID"', ":type" => "php"])->fetchAll(); foreach ($rows as $r) { $v = @unserialize((string) $r->variables, ["allowed_classes" => FALSE]); echo "DQA: " . strip_tags(strtr((string) $r->message, is_array($v) ? array_map("strval", $v) : [])) . "\n"; } echo "DQA-COUNT:" . count($rows) . "\n";'
+          printf -v php_code '%s' \
+            '$rows = \Drupal::database()->query("SELECT message, variables, severity FROM {watchdog}' \
+            ' WHERE wid > :wid AND type = :type AND severity <= 4 ORDER BY wid LIMIT 20",' \
+            ' [":wid" => '"$WID"', ":type" => "php"])->fetchAll();' \
+            ' foreach ($rows as $r) {' \
+            ' $v = @unserialize((string) $r->variables, ["allowed_classes" => FALSE]);' \
+            ' echo "DQA: " . strip_tags(strtr((string) $r->message,' \
+            ' is_array($v) ? array_map("strval", $v) : [])) . "\n"; }' \
+            ' echo "DQA-COUNT:" . count($rows) . "\n";'
           out=$(vendor/bin/drush "@pantheon.$SITE.$ENV_NAME" php:eval "$php_code" 2> /dev/null) || {
             echo "::error title=PHP errors logged::Could not read the log on $ENV_NAME."
             exit 1
@@ -871,7 +949,8 @@ jobs:
           if [ "$count" = 0 ]; then
             echo "No PHP warnings or errors were logged on $ENV_NAME while the tests ran."
           else
-            echo "::error title=PHP errors logged::$count PHP warning(s) or error(s) were logged on $ENV_NAME while the tests ran."
+            echo "::error title=PHP errors logged::$count PHP warning(s) or error(s) were logged" \
+              "on $ENV_NAME while the tests ran."
             echo "$out" | grep '^DQA: ' | sed 's/^DQA: /- /' | cut -c1-400
             exit 1
           fi
@@ -906,7 +985,8 @@ jobs:
           TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
-          curl -fsSL "https://github.com/pantheon-systems/terminus/releases/download/${TERMINUS_VERSION}/terminus.phar" -o "$RUNNER_TEMP/bin/terminus"
+          releases=https://github.com/pantheon-systems/terminus/releases/download
+          curl -fsSL "$releases/${TERMINUS_VERSION}/terminus.phar" -o "$RUNNER_TEMP/bin/terminus"
           chmod +x "$RUNNER_TEMP/bin/terminus"
           export PATH="$RUNNER_TEMP/bin:$PATH"
           terminus auth:login --machine-token="$TOKEN" > /dev/null
@@ -955,7 +1035,8 @@ jobs:
           mode_of() { local v="M_${1^^}"; echo "${!v:-block}"; }
 
           rows=()
-          for k in phpcs phpstan yamllint audit secrets phpunit deliver converge updatedb cim deployhooks config status behat watchdog; do
+          for k in phpcs phpstan yamllint audit secrets phpunit deliver converge updatedb \
+            cim deployhooks config status behat watchdog; do
             case $k in
               deliver|converge) [ "$DEPLOYING" = true ] || continue; mode=block ;;
               deployhooks) mode=$(mode_of cim) ;;
@@ -968,7 +1049,8 @@ jobs:
               state="✅ passed"
             elif [ "$outcome" = failure ] && [ "$mode" = warn ]; then
               state="⚠️ failed (warn only)"
-              echo "::warning title=${label[$k]}::${label[$k]} failed. It only warns; add $k to required to make it block."
+              echo "::warning title=${label[$k]}::${label[$k]} failed." \
+                "It only warns; add $k to required to make it block."
             elif [ "$outcome" = failure ]; then
               state="❌ failed"
             else
@@ -1000,7 +1082,8 @@ jobs:
           $(cat "$RUNNER_TEMP/summary.md")
 
           <sub>[Run details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})</sub>"
-          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- drupal-qa -->")) | .id' | tail -1)
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- drupal-qa -->")) | .id' | tail -1)
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" > /dev/null
           else
