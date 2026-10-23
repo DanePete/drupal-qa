@@ -13,6 +13,10 @@ name: Drupal QA
 #     deploys.
 #   - Delivery to an environment queues and never cancels: a cancelled
 #     multidev:create leaves a half-built environment Pantheon cannot roll back.
+#   - A merge does not repeat a code check its pull request passed on the
+#     same tree under the same drupal-qa: those checks depend on the code
+#     alone. Anything that cannot be proven runs again. The deploy checks
+#     always run, because dev is not the multidev.
 
 on:
   workflow_call:
@@ -39,6 +43,12 @@ on:
         description: Steps that do not run, space separated, e.g. "behat cim".
         type: string
         default: ''
+      reuse_pr_checks:
+        description: >-
+          On a merge, skip PHPCS, PHPStan, YAML lint and PHPUnit where the pull
+          request passed them on identical code. Needs actions: read.
+        type: boolean
+        default: true
     secrets:
       PANTHEON_MACHINE_TOKEN:
         required: false
@@ -82,10 +92,66 @@ jobs:
       cim: ${{ steps.plan.outputs.cim }}
       status: ${{ steps.plan.outputs.status }}
       watchdog: ${{ steps.plan.outputs.watchdog }}
+      tree: ${{ steps.plan.outputs.tree }}
+      reused: ${{ steps.plan.outputs.reused }}
+      reused_from: ${{ steps.plan.outputs.reused_from }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      - name: Find the pull request's results
+        id: verdict
+        # A merge's first attempt only: a re-run, or a run started by hand, is
+        # someone asking for everything to be checked again.
+        if: >-
+          inputs.reuse_pr_checks && github.event_name == 'push' && github.run_attempt == '1'
+          && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          # A pull request's run leaves its results in an artifact named after
+          # the tree it tested. The same tree is the same code whichever way it
+          # was merged, so the tree is compared, not commits; and GitHub's
+          # record of each run says which drupal-qa it resolved @v2 to.
+          # Whatever this step cannot prove leaves the results unused, and
+          # everything runs.
+          tree=$(git rev-parse 'HEAD^{tree}')
+          caller=${WORKFLOW_REF#"$REPO"/}
+          caller=${caller%%@*}
+          if ! mine=$(gh api "repos/$REPO/actions/runs/$GITHUB_RUN_ID" \
+            --jq '[.referenced_workflows[]? | "\(.path) \(.sha)"] | sort' 2>&1); then
+            echo "::notice title=drupal-qa::Could not read the pull request's results, so every check runs." \
+              "Give the workflow actions: read to let a merge reuse them. ($mine)"
+            exit 0
+          fi
+          if [ "$mine" = "[]" ]; then echo "This run names no drupal-qa version; everything runs."; exit 0; fi
+          list=$(gh api "repos/$REPO/actions/artifacts?name=drupal-qa-verdict-$tree&per_page=20" \
+            --jq '.artifacts[] | select(.expired | not) | "\(.id) \(.workflow_run.id)"')
+          mapfile -t rows <<< "$list"
+          for row in "${rows[@]}"; do
+            read -r id run_id <<< "$row"
+            [ -n "$run_id" ] || continue
+            # Only a pull request's run of this same workflow file, from this
+            # repository rather than a fork, under the same drupal-qa.
+            run=$(gh api "repos/$REPO/actions/runs/$run_id" | jq -r --arg repo "$REPO" --arg path "$caller" \
+              --argjson mine "$mine" 'select(.event == "pull_request" and .head_repository.full_name == $repo
+              and .path == $path and ([.referenced_workflows[]? | "\(.path) \(.sha)"] | sort) == $mine)
+              | .html_url') || continue
+            [ -n "$run" ] || continue
+            gh api "repos/$REPO/actions/artifacts/$id/zip" > "$RUNNER_TEMP/verdict.zip" || continue
+            unzip -p "$RUNNER_TEMP/verdict.zip" verdict.json > "$RUNNER_TEMP/candidate.json" || continue
+            if jq -e --arg tree "$tree" '.version == 1 and .tree == $tree' "$RUNNER_TEMP/candidate.json" > /dev/null; then
+              mv "$RUNNER_TEMP/candidate.json" "$RUNNER_TEMP/verdict.json"
+              echo "run=$run" >> "$GITHUB_OUTPUT"
+              echo "A pull request's run tested this exact code: $run"
+              exit 0
+            fi
+          done
+          echo "No pull request's run tested this exact code under this drupal-qa; everything runs."
 
       - name: Decide what runs
         id: plan
@@ -102,6 +168,7 @@ jobs:
           SKIP: ${{ inputs.skip }}
           HAS_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN != '' }}
           HAS_KEY: ${{ secrets.PANTHEON_SSH_KEY != '' }}
+          VERDICT_RUN: ${{ steps.verdict.outputs.run }}
         run: |
           fail() { echo "::error title=drupal-qa::$*"; exit 1; }
           out() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
@@ -215,6 +282,19 @@ jobs:
           if [ "${m[behat]}" = off ]; then m[watchdog]=off; fi
           if [ "$event" = pr-closed ]; then for k in "${!m[@]}"; do m[$k]=off; done; fi
 
+          # Only a pass under the same mode is reused; a check that failed or
+          # warned on the pull request runs again and says so again.
+          reused=()
+          if [ -n "$VERDICT_RUN" ] && [ -f "$RUNNER_TEMP/verdict.json" ]; then
+            for k in phpcs phpstan yamllint phpunit; do
+              [ "${m[$k]}" != off ] || continue
+              was=$(jq -r --arg k "$k" '.checks[$k] // ""' "$RUNNER_TEMP/verdict.json")
+              if [ "$was" = "success:${m[$k]}" ]; then m[$k]=off; reused+=("$k"); fi
+            done
+          fi
+          reused_from=""
+          if [ ${#reused[@]} -gt 0 ]; then reused_from=$VERDICT_RUN; fi
+
           static=false
           for k in phpcs phpstan yamllint audit secrets; do
             if [ "${m[$k]}" != off ]; then static=true; fi
@@ -223,13 +303,16 @@ jobs:
           out event "$event"; out env "$env_name"; out php "$php"; out code_paths "$code_paths"
           out config_dir "$config_dir"; out commerce "$commerce"; out deploy "$deploy"
           out cleanup "$cleanup"; out static "$static"
+          out tree "$(git rev-parse 'HEAD^{tree}')"; out reused "${reused[*]}"; out reused_from "$reused_from"
           for k in "${!m[@]}"; do out "$k" "${m[$k]}"; done
 
           {
             echo "event=$event env=${env_name:-none} code_host=$CODE_HOST php=$php commerce=$commerce"
             echo "code paths: ${code_paths:-none}  config: ${config_dir:-none}"
             for k in phpcs phpstan yamllint audit secrets phpunit updatedb cim config status behat watchdog; do
-              printf '  %-9s %s\n' "$k" "${m[$k]}"
+              state=${m[$k]}
+              if [[ " ${reused[*]} " == *" $k "* ]]; then state="passed on $reused_from"; fi
+              printf '  %-9s %s\n' "$k" "$state"
             done
             for n in "${note[@]}"; do echo "note: $n"; done
           }
@@ -269,9 +352,7 @@ jobs:
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Composer install
-        if: >-
-          needs.plan.outputs.phpcs != 'off' || needs.plan.outputs.phpstan != 'off'
-          || needs.plan.outputs.audit != 'off'
+        if: needs.plan.outputs.phpcs != 'off' || needs.plan.outputs.phpstan != 'off'
         run: |
           composer install --no-interaction --no-progress --prefer-dist
           if [ ! -x vendor/bin/phpcs ] || [ ! -x vendor/bin/phpstan ]; then
@@ -326,7 +407,9 @@ jobs:
         id: audit
         if: needs.plan.outputs.audit != 'off'
         continue-on-error: ${{ needs.plan.outputs.audit != 'block' }}
-        run: composer audit --no-interaction
+        # The lock file is what Pantheon installs, and reading it needs no
+        # install: a merge that reuses PHPCS and PHPStan installs nothing.
+        run: composer audit --no-interaction --locked
 
       - name: Secret scan
         id: secrets
@@ -1025,6 +1108,10 @@ jobs:
           M_BEHAT: ${{ needs.plan.outputs.behat }}
           M_STATUS: ${{ needs.plan.outputs.status }}
           M_WATCHDOG: ${{ needs.plan.outputs.watchdog }}
+          EVENT: ${{ needs.plan.outputs.event }}
+          TREE: ${{ needs.plan.outputs.tree }}
+          REUSED: ${{ needs.plan.outputs.reused }}
+          REUSED_FROM: ${{ needs.plan.outputs.reused_from }}
         run: |
           declare -A r
           for pair in $STATIC $TESTS $DEPLOY $BEHAT; do r[${pair%%=*}]=${pair#*=}; done
@@ -1037,6 +1124,10 @@ jobs:
           rows=()
           for k in phpcs phpstan yamllint audit secrets phpunit deliver converge updatedb \
             cim deployhooks config status behat watchdog; do
+            if [[ " $REUSED " == *" $k "* ]]; then
+              rows+=("| ${label[$k]} | ✅ passed on the [pull request]($REUSED_FROM), same code |")
+              continue
+            fi
             case $k in
               deliver|converge) [ "$DEPLOYING" = true ] || continue; mode=block ;;
               deployhooks) mode=$(mode_of cim) ;;
@@ -1067,6 +1158,28 @@ jobs:
             echo "|---|---|"
             printf '%s\n' "${rows[@]}"
           } | tee "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+          # What passed here, kept for the merge: see "Find the pull request's
+          # results" in the plan job.
+          if [ "$EVENT" = pr ] && [ -n "$TREE" ]; then
+            mkdir -p "$RUNNER_TEMP/verdict"
+            for k in phpcs phpstan yamllint phpunit; do echo "$k ${r[$k]:-none}:$(mode_of "$k")"; done \
+              | jq -Rn --arg tree "$TREE" \
+                '{version: 1, tree: $tree, checks: ([inputs | split(" ") | {(.[0]): .[1]}] | add)}' \
+              > "$RUNNER_TEMP/verdict/verdict.json"
+          fi
+
+      - name: Keep the results for the merge
+        if: needs.plan.outputs.event == 'pr'
+        # Without it the merge runs every check, as it would anyway.
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: drupal-qa-verdict-${{ needs.plan.outputs.tree }}
+          path: ${{ runner.temp }}/verdict/verdict.json
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: error
 
       - name: Comment on the pull request
         if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'

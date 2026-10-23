@@ -119,7 +119,7 @@ project-health tests**, plus a check for PHP errors while they run.
 | When | What happens |
 |---|---|
 | **Pull request** opened or pushed | Code checks and PHPUnit, then a multidev `pr-N`, database updates, config import and smoke tests against it. The results land on the pull request. |
-| **Merge** to the default branch | The same, against `dev`. |
+| **Merge** to the default branch | The deploy checks and smoke tests, against `dev`. Code checks the pull request already passed on the same code [don't run again](#what-a-merge-runs-again). |
 | **Pull request closed** | `pr-N` is deleted. |
 
 ![The run in GitHub Actions, annotated job by job](docs/images/run-actions-graph.png)
@@ -223,6 +223,34 @@ while the smoke tests ran. Warns by default.
 
 </details>
 
+### What a merge runs again
+
+PHPCS, PHPStan, YAML lint and PHPUnit depend on nothing but the code. When the code a
+merge puts on the default branch is identical, file for file, to the code the pull
+request tested, a check that passed there doesn't run again. The summary says
+**passed on the pull request, same code** and links that run.
+
+Everything else runs on every merge:
+
+- **Deploy checks and smoke tests.** Dev isn't the multidev: it has its own database
+  and config, and that's what they test.
+- **Composer audit.** New advisories are published every day.
+- **Secret scan.** It reads the commits the merge adds.
+
+A check runs again, as it always used to, when any of these is true:
+
+- The code differs, usually because the default branch moved after the pull request's
+  last run. Turn on *Require branches to be up to date before merging* in the branch's
+  protection rules and it rarely happens.
+- drupal-qa changed between the two runs, for example when `@v2` moved to a new release.
+- The check failed or only warned on the pull request.
+- The pull request came from a fork, or its run hadn't finished when it was merged.
+- The run is a re-run, or someone started it by hand.
+- The workflow lacks `actions: read`, which it needs to read the pull request's run.
+  It says so in a notice.
+
+To run everything on every merge, set `reuse_pr_checks: false`.
+
 ## What blocks a merge
 
 A step that **blocks** fails its job. A step that **warns** shows ⚠️ on the pull
@@ -316,6 +344,7 @@ it all locally with ddev.
       skip: behat               # don't run
       code_host: github-app     # Pantheon's GitHub App deploys; drupal-qa does the rest
       multidev: false           # below Gold: checks only on pull requests
+      reuse_pr_checks: false    # every merge runs every check again
 ```
 
 | Option | Default | Meaning |
@@ -325,6 +354,7 @@ it all locally with ddev.
 | `skip` | empty | Steps that don't run. |
 | `code_host` | `pantheon` | `pantheon` (drupal-qa pushes), `github-app` (Pantheon's app pushes), `none` (checks only). |
 | `multidev` | `true` | Needs a Gold workspace or higher. |
+| `reuse_pr_checks` | `true` | A merge skips code checks its pull request passed on identical code. See [What a merge runs again](#what-a-merge-runs-again). |
 
 Names: `phpcs phpstan yamllint audit secrets phpunit behat config status watchdog`;
 `skip` also takes `updatedb` and `cim`. Detected, not configured: PHP version, code
@@ -449,9 +479,10 @@ on:
 
 jobs:
   qa:
-    permissions:              # new repositories let workflows only read;
-      contents: read          # the results comment needs this write
-      pull-requests: write
+    permissions:              # new repositories let workflows only read
+      contents: read
+      pull-requests: write    # comment the results on the pull request
+      actions: read           # let a merge skip what the pull request passed
     uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
     with:
       pantheon_site: my-site

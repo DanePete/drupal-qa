@@ -218,6 +218,7 @@ if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; w
   c "named the Behat scenario that failed, and why" said 'was not found anywhere in the text'
   c "linked the multidev" said "pr-7-acme-site.pantheonsite.io"
   c "wrote the permission the results comment needs" shows "$repo" "$workflow" 'pull-requests: write'
+  c "wrote the permission a merge needs to reuse results" shows "$repo" "$workflow" 'actions: read'
   c "never printed the token" sh -c "! grep -q 'good-token' '$T/transcript'"
   c "never force-pushed" sh -c "! grep -q -- '--force' '$FAKE_LOG'"
   c "drew the job board's icons intact" has_bytes '\342\234\223\033\\[0m Plan' "$T/transcript"
@@ -225,11 +226,8 @@ if scenario fresh "a site only in Pantheon's git; new GitHub repo; first test; w
 fi
 
 # ─────────────────────────────────────────────────────────────────────────
-if scenario rerun "already installed and on GitHub with both secrets: keep everything"; then
-  fixture "$FAKE_FIXTURE" 8.3 v2 > /dev/null
-  cd "$FAKE_FIXTURE" || exit 1
-  mkdir -p .github/workflows
-  cat > .github/workflows/drupal-qa.yml << 'EOF'
+current_workflow() { # what the wizard writes for acme-site today
+  cat << 'EOF'
 name: Drupal QA
 
 on:
@@ -243,6 +241,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      actions: read
     uses: DanePete/drupal-qa/.github/workflows/pipeline.yml@v2
     with:
       pantheon_site: acme-site
@@ -250,6 +249,13 @@ jobs:
       PANTHEON_MACHINE_TOKEN: ${{ secrets.PANTHEON_MACHINE_TOKEN }}
       PANTHEON_SSH_KEY: ${{ secrets.PANTHEON_SSH_KEY }}
 EOF
+}
+
+if scenario rerun "already installed and on GitHub with both secrets: keep everything"; then
+  fixture "$FAKE_FIXTURE" 8.3 v2 > /dev/null
+  cd "$FAKE_FIXTURE" || exit 1
+  mkdir -p .github/workflows
+  current_workflow > .github/workflows/drupal-qa.yml
   git add -A && git commit -q -m "drupal-qa"
   mkdir -p "$FAKE_GH/acme-org" && git init -q --bare "$FAKE_GH/acme-org/acme-site.git"
   git remote add github "https://github.com/acme-org/acme-site.git" && git push -q github master
@@ -282,6 +288,51 @@ EOF
   c "didn't add a key" test ! -e "$FAKE_STATE/key-added"
   c "didn't open a pull request" sh -c "! grep -q 'gh pr create' '$FAKE_LOG'"
   c "left the working tree clean" test -z "$(git status --porcelain)"
+  done_scenario
+fi
+
+# ─────────────────────────────────────────────────────────────────────────
+if scenario permission "a v2.1 workflow without actions: read: show the change, replace it"; then
+  fixture "$FAKE_FIXTURE" 8.3 v2 > /dev/null
+  cd "$FAKE_FIXTURE" || exit 1
+  mkdir -p .github/workflows
+  current_workflow | grep -v 'actions: read' > .github/workflows/drupal-qa.yml
+  git add -A && git commit -q -m "drupal-qa"
+  mkdir -p "$FAKE_GH/acme-org" && git init -q --bare "$FAKE_GH/acme-org/acme-site.git"
+  git remote add github "https://github.com/acme-org/acme-site.git" && git push -q github master
+  export FAKE_SECRETS="PANTHEON_MACHINE_TOKEN PANTHEON_SSH_KEY"
+  drive "" '
+    pick "Press Enter to start" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Use acme-site" "y"
+    pick "Press Enter to continue" "\r"
+    pick "Press Enter to continue" "\r"
+    pick "Replace it with the new one" "y"
+    pick "Press Enter to continue" "\r"
+    pick "Using .*acme-org/acme-site" ""
+    pick "Press Enter to continue" "\r"
+    pick "Keep it" "y"
+    pick "Press Enter to continue" "\r"
+    pick "Keep it" "y"
+    pick "Press Enter to continue" "\r"
+    pick "Add a first test" "n"
+    pick "Commit to" "y"
+    pick "Press Enter to continue" "\r"
+    pick "first run passed" ""
+    pick "Press Enter to continue" "\r"
+  '
+  rc=$?
+  unset FAKE_SECRETS
+  repo="$FAKE_GH/acme-org/acme-site.git"
+  c "the wizard finished cleanly (exit $rc)" test "$rc" = 0
+  c "showed the missing permission before replacing" said "+      actions: read"
+  c "the commit adds actions: read" \
+    shows "$repo" chore/drupal-qa:.github/workflows/drupal-qa.yml 'actions: read'
+  c "the commit changes only the workflow" \
+    test "$(git --git-dir="$repo" show --name-only --format= chore/drupal-qa)" = .github/workflows/drupal-qa.yml
+  c "didn't touch the secrets" sh -c "! grep -q 'gh secret set' '$FAKE_LOG'"
+  c "opened the pull request" logged 'gh pr create -R acme-org/acme-site --base master --head chore/drupal-qa'
   done_scenario
 fi
 

@@ -851,8 +851,9 @@ stage_workflow() {
     printf '%s\n' "name: Drupal QA" "" "on:" "  pull_request:" \
       "    types: [opened, synchronize, reopened, closed]" \
       "  push:" "    branches: [$DEFAULT_BRANCH]" "" "jobs:" "  qa:"
-    # New repositories only let workflows read; the results comment needs write.
-    printf '%s\n' "    permissions:" "      contents: read" "      pull-requests: write"
+    # New repositories only let workflows read. The results comment needs
+    # write, and a merge reads the pull request's run to skip what passed.
+    printf '%s\n' "    permissions:" "      contents: read" "      pull-requests: write" "      actions: read"
     printf '    uses: %s\n' "$WORKFLOW_USES"
     printf '%s\n' "    with:" "      pantheon_site: $SITE"
     [ "$MULTIDEV" = false ] && printf '      multidev: false\n'
