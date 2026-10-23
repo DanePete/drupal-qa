@@ -125,7 +125,7 @@ jobs:
           if ! mine=$(gh api "repos/$REPO/actions/runs/$GITHUB_RUN_ID" \
             --jq '[.referenced_workflows[]? | "\(.path) \(.sha)"] | sort' 2>&1); then
             echo "::notice title=drupal-qa::Could not read the pull request's results, so every check runs." \
-              "Give the workflow actions: read to let a merge reuse them. ($mine)"
+              "Give the workflow actions: read to let a merge reuse them. ($(tail -n 1 <<< "$mine"))"
             exit 0
           fi
           if [ "$mine" = "[]" ]; then echo "This run names no drupal-qa version; everything runs."; exit 0; fi
